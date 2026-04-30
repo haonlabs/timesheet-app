@@ -1,0 +1,211 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { timesheetStore, totalWorkHours, totalOTHours, workDaysCount } from '$lib/store';
+  import { fetchIndonesianHolidays, generateDaysForMonth, mergeHolidays, getMonthName } from '$lib/calendar';
+  import { parseTimesheetExcel } from '$lib/excelParser';
+  import { exportToExcel } from '$lib/excelExporter';
+  import { exportToPDF } from '$lib/pdfExport';
+  import TimesheetTable from './TimesheetTable.svelte';
+  import UploadZone from './UploadZone.svelte';
+  import MetaForm from './MetaForm.svelte';
+  import HolidayManager from './HolidayManager.svelte';
+  import AssetUpload from './AssetUpload.svelte';
+
+  let activeTab = $state('editor');
+  let isLoading = $state(false);
+  let loadingMsg = $state('');
+  let toastMsg = $state('');
+  let toastType = $state('ok');
+  let toastVisible = $state(false);
+  let templateUploaded = $state(false);
+  let storeState = $state({ meta: { month: new Date().getMonth()+1, year: new Date().getFullYear(), employeeName: '', projectName: '', clientName: '', holidays: [], logo: '', signatures: {} }, entries: [] });
+
+  timesheetStore.subscribe(v => storeState = v);
+
+  function showToast(msg, type = 'ok') {
+    toastMsg = msg; toastType = type; toastVisible = true;
+    setTimeout(() => toastVisible = false, 3500);
+  }
+
+  async function loadHolidaysAndGenerate(month, year, preEntries) {
+    loadingMsg = 'Fetching Indonesian holidays...';
+    try {
+      const apiHolidays = await fetchIndonesianHolidays(year);
+      const manualHolidays = storeState.meta.holidays.filter(h => h.type === 'manual');
+      const merged = mergeHolidays(apiHolidays, manualHolidays);
+      timesheetStore.setHolidays(merged);
+      const entries = generateDaysForMonth(month, year, merged, preEntries || storeState.entries);
+      timesheetStore.setEntries(entries);
+    } catch(e) { console.error(e); }
+  }
+
+  async function handleTemplateUpload(file) {
+    isLoading = true; loadingMsg = 'Parsing template...';
+    try {
+      const buf = await file.arrayBuffer();
+      const result = await parseTimesheetExcel(buf);
+      timesheetStore.setTemplate(buf);
+      if (result.meta.employeeName) timesheetStore.setMeta(result.meta);
+      const m = result.meta.month || new Date().getMonth()+1;
+      const y = result.meta.year || new Date().getFullYear();
+      timesheetStore.setMeta({ month: m, year: y });
+      await loadHolidaysAndGenerate(m, y, result.entries.length > 0 ? result.entries : undefined);
+      templateUploaded = true;
+      showToast('Template imported!');
+    } catch(e) { showToast('Failed to parse template', 'err'); console.error(e); }
+    finally { isLoading = false; }
+  }
+
+  async function onMonthYearChange(month, year) {
+    isLoading = true; loadingMsg = 'Generating calendar...';
+    try {
+      timesheetStore.setMeta({ month, year });
+      await loadHolidaysAndGenerate(month, year);
+    } finally { isLoading = false; }
+  }
+
+  async function handleExportExcel() {
+    isLoading = true; loadingMsg = 'Generating Excel...';
+    try {
+      const blob = await exportToExcel(storeState);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Timesheet_${storeState.meta.employeeName || 'Export'}_${getMonthName(storeState.meta.month)}_${storeState.meta.year}.xlsx`;
+      a.click(); URL.revokeObjectURL(url);
+      showToast('Excel exported!');
+    } catch(e) { showToast('Export failed', 'err'); }
+    finally { isLoading = false; }
+  }
+
+  function handleExportPDF() {
+    exportToPDF(storeState);
+  }
+
+  async function startFresh() {
+    const m = storeState.meta.month; const y = storeState.meta.year;
+    isLoading = true; loadingMsg = 'Setting up...';
+    try {
+      timesheetStore.setMeta({ month: m, year: y });
+      await loadHolidaysAndGenerate(m, y);
+      templateUploaded = true;
+      showToast('Ready! Fill in your timesheet.');
+    } finally { isLoading = false; }
+  }
+
+  onMount(async () => {
+    if (storeState.entries.length === 0) {
+      isLoading = true; loadingMsg = 'Loading holidays...';
+      try { await loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year); }
+      finally { isLoading = false; }
+    }
+  });
+</script>
+
+<div class="min-h-screen" style="background:var(--c-bg);color:var(--c-text);">
+  <!-- Topbar -->
+  <header class="sticky top-0 z-50 border-b" style="background:var(--c-surface);border-color:var(--c-border);">
+    <div class="max-w-screen-2xl mx-auto px-4 flex items-center gap-3 h-14">
+      <div class="flex items-center gap-2 mr-2">
+        {#if storeState.meta.logo}
+          <img src={storeState.meta.logo} alt="Logo" class="h-8 object-contain" />
+        {:else}
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs"
+            style="background:linear-gradient(135deg,var(--c-accent),var(--c-accent2));">TS</div>
+        {/if}
+        <span class="font-semibold text-sm hidden sm:block">Timesheet</span>
+      </div>
+      <nav class="flex gap-1 flex-1">
+        {#each [['editor','📝 Editor'],['holidays','🗓 Holidays'],['assets','🖼 Assets'],['preview','👁 Preview']] as [id, label]}
+          <button onclick={() => activeTab = id}
+            class="px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+            style={activeTab === id ? 'background:var(--c-accent);color:white;' : 'color:var(--c-muted);'}>
+            {label}
+          </button>
+        {/each}
+      </nav>
+      <div class="hidden lg:flex items-center gap-4 text-xs" style="color:var(--c-muted);">
+        <span>Days: <b style="color:var(--c-text);">{$workDaysCount}</b></span>
+        <span>Hours: <b style="color:var(--c-success);">{$totalWorkHours}</b></span>
+        <span>OT: <b style="color:var(--c-warn);">{$totalOTHours}</b></span>
+      </div>
+      <div class="flex gap-2 ml-2">
+        <button onclick={handleExportExcel}
+          class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
+          style="background:var(--c-success);color:#000;">⬇ Excel</button>
+        <button onclick={handleExportPDF}
+          class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
+          style="background:var(--c-danger);color:white;">🖨 PDF</button>
+      </div>
+    </div>
+  </header>
+
+  {#if isLoading}
+    <div class="fixed inset-0 z-[100] flex items-center justify-center"
+      style="background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);">
+      <div class="rounded-xl p-8 flex flex-col items-center gap-4"
+        style="background:var(--c-surface);border:1px solid var(--c-border);">
+        <div class="w-10 h-10 border-4 rounded-full animate-spin"
+          style="border-color:var(--c-border);border-top-color:var(--c-accent);"></div>
+        <p class="text-sm" style="color:var(--c-muted);">{loadingMsg}</p>
+      </div>
+    </div>
+  {/if}
+
+  {#if toastVisible}
+    <div class="fixed bottom-6 right-6 z-[200] px-4 py-3 rounded-xl text-sm font-semibold shadow-xl fade-in"
+      style="background:{toastType==='ok'?'var(--c-success)':'var(--c-danger)'};color:{toastType==='ok'?'#000':'#fff'};">
+      {toastMsg}
+    </div>
+  {/if}
+
+  <main class="max-w-screen-2xl mx-auto px-4 py-6">
+    {#if activeTab === 'editor'}
+      <div class="flex gap-6">
+        <div class="w-80 flex-shrink-0 space-y-4">
+          {#if !templateUploaded}
+            <div class="rounded-xl p-4" style="background:var(--c-surface);border:1px solid var(--c-border);">
+              <h2 class="font-semibold text-sm mb-3" style="color:var(--c-accent);">📂 Import Template</h2>
+              <UploadZone accept=".xlsx,.xls" label="Drop .xlsx template here" onUpload={handleTemplateUpload} />
+              <div class="my-3 flex items-center gap-2">
+                <div class="flex-1 h-px" style="background:var(--c-border);"></div>
+                <span class="text-xs" style="color:var(--c-muted);">or</span>
+                <div class="flex-1 h-px" style="background:var(--c-border);"></div>
+              </div>
+              <button onclick={startFresh} class="w-full py-2 rounded-lg text-sm font-medium"
+                style="background:var(--c-surface2);border:1px solid var(--c-border);">
+                Start from scratch
+              </button>
+            </div>
+          {:else}
+            <div class="rounded-xl p-3 flex items-center gap-3" style="background:#0d2b1a;border:1px solid #1a4a2a;">
+              <span>✅</span>
+              <div>
+                <p class="text-sm font-medium" style="color:var(--c-success);">Template loaded</p>
+                <button onclick={() => templateUploaded = false} class="text-xs" style="color:var(--c-muted);">Change</button>
+              </div>
+            </div>
+          {/if}
+          <MetaForm {onMonthYearChange} />
+        </div>
+        <div class="flex-1 min-w-0">
+          <TimesheetTable />
+        </div>
+      </div>
+    {:else if activeTab === 'holidays'}
+      <HolidayManager onRefresh={() => loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year)} />
+    {:else if activeTab === 'assets'}
+      <AssetUpload />
+    {:else if activeTab === 'preview'}
+      <div class="rounded-xl overflow-auto" style="background:white;color:#000;">
+        <div id="print-area" class="p-6">
+          <TimesheetTable printMode={true} />
+        </div>
+      </div>
+    {/if}
+  </main>
+</div>
+
+<script context="module" lang="ts">
+  // noop
+</script>
