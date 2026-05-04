@@ -75,7 +75,7 @@
     <div class="rounded-xl p-4" style="background:var(--c-surface);border:1px solid var(--c-border);">
       <h2 class="font-semibold text-sm mb-3" style="color:var(--c-accent);">🗓 Holiday Manager</h2>
       <p class="text-xs mb-4" style="color:var(--c-muted);">
-        Holidays are automatically fetched from the Indonesian public holiday API.
+        Holidays are automatically fetched from the Indonesia Holiday API.
         You can add manual overrides below.
       </p>
 

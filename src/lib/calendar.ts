@@ -5,6 +5,14 @@ const MONTH_NAMES_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
+const INDONESIA_HOLIDAY_API_BASE_URL = 'https://indonesia-holiday-api.onrender.com';
+
+type IndonesiaHolidayApiRow = {
+  date?: string;
+  name?: string;
+  type?: 'PUBLIC_HOLIDAY' | 'CUTI_BERSAMA';
+  year?: number;
+};
 
 export function getDayName(date: Date): string {
   return DAY_NAMES_ID[date.getDay()];
@@ -98,12 +106,18 @@ export function generateDaysForMonth(
   return entries;
 }
 
-// Fetch from libur.deno.dev — covers public holidays + cuti bersama
+// Fetch from Indonesia Holiday API — covers public holidays + cuti bersama
 export async function fetchIndonesianHolidays(year: number): Promise<Holiday[]> {
-  const results: Holiday[] = [];
-
   try {
-    // Fetch month by month for the full year because the summary API might lack metadata
+    const res = await fetch(`${INDONESIA_HOLIDAY_API_BASE_URL}/holidays?year=${year}`);
+    const data: unknown = res.ok ? await res.json() : [];
+    const results = normalizeIndonesiaHolidayApiRows(data, year);
+    if (results.length > 0) return results;
+  } catch { /* fall through */ }
+
+  // Fallback: libur.deno.dev exposes both public holidays and cuti bersama.
+  try {
+    const results: Holiday[] = [];
     const fetches = Array.from({ length: 12 }, (_, i) =>
       fetch(`https://libur.deno.dev/api?year=${year}&month=${i + 1}`)
         .then(r => r.ok ? r.json() : [])
@@ -114,7 +128,6 @@ export async function fetchIndonesianHolidays(year: number): Promise<Holiday[]> 
     for (const monthData of allMonths) {
       if (!Array.isArray(monthData)) continue;
       for (const item of monthData) {
-        // API response fields: date, name, is_cuti_bersama
         if (!item.date) continue;
         const type: Holiday['type'] = item.is_cuti_bersama ? 'collective' : 'public';
         results.push({
@@ -128,7 +141,7 @@ export async function fetchIndonesianHolidays(year: number): Promise<Holiday[]> 
     if (results.length > 0) return results;
   } catch { /* fall through */ }
 
-  // Fallback: nager.date
+  // Fallback: nager.date covers public holidays only.
   try {
     const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/ID`);
     if (res.ok) {
@@ -138,6 +151,26 @@ export async function fetchIndonesianHolidays(year: number): Promise<Holiday[]> 
   } catch { /* fall through */ }
 
   return getFallbackHolidays(year);
+}
+
+function normalizeIndonesiaHolidayApiRows(data: unknown, year: number): Holiday[] {
+  if (!Array.isArray(data)) return [];
+
+  return data
+    .filter((item): item is IndonesiaHolidayApiRow => {
+      if (!item || typeof item !== 'object') return false;
+      const row = item as Partial<IndonesiaHolidayApiRow>;
+      return typeof row.date === 'string' &&
+        typeof row.name === 'string' &&
+        (row.type === 'PUBLIC_HOLIDAY' || row.type === 'CUTI_BERSAMA') &&
+        (row.year === undefined || row.year === year);
+    })
+    .map((item): Holiday => ({
+      date: item.date!,
+      name: item.name || 'Hari Libur',
+      type: item.type === 'CUTI_BERSAMA' ? 'collective' : 'public',
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function getFallbackHolidays(year: number): Holiday[] {
