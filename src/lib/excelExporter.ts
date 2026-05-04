@@ -36,8 +36,8 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
   ws.getCell('M4').value = meta.projectName || '';
   ws.getCell('O4').value = meta.clientName || '';
 
-  const periodStart = new Date(meta.year, meta.month - 1, 1);
-  const periodEnd = new Date(meta.year, meta.month, 0);
+  const periodStart = new Date(meta.year, meta.month - 1, 1, 12, 0, 0);
+  const periodEnd = new Date(meta.year, meta.month, 0, 12, 0, 0);
   ws.getCell('S5').value = periodStart;
   ws.getCell('V5').value = periodEnd;
 
@@ -51,9 +51,11 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
     const dateCell = row.getCell(2); // Column B
     const val = dateCell.value;
     if (val instanceof Date) {
-      const y = val.getFullYear();
-      const m = String(val.getMonth() + 1).padStart(2, '0');
-      const d = String(val.getDate()).padStart(2, '0');
+      // Use a safe reference by resetting to noon local to avoid TZ shift
+      const dSafe = new Date(val.getFullYear(), val.getMonth(), val.getDate(), 12, 0, 0);
+      const y = dSafe.getFullYear();
+      const m = String(dSafe.getMonth() + 1).padStart(2, '0');
+      const d = String(dSafe.getDate()).padStart(2, '0');
       rowMap.set(`${y}-${m}-${d}`, rowNum);
     }
   });
@@ -133,8 +135,11 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
   if ((meta as any).supervisor2Name) ws.getCell('T62').value = (meta as any).supervisor2Name;
   // Employee name E62
   ws.getCell('E62').value = meta.employeeName || '';
-  // Date C62
-  ws.getCell('C62').value = new Date(meta.year, meta.month, 0); // last day of month
+  // date C62
+  ws.getCell('C62').value = new Date(meta.year, meta.month, 0, 12, 0, 0); // last day of month
+
+  // Ensure column B (Date) is wide enough for "Day, DD-MM-YYYY"
+  ws.getColumn(2).width = 22;
 
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], {
@@ -179,8 +184,9 @@ async function buildFromScratch(state: TimesheetState): Promise<Blob> {
     const row = ws.getRow(8 + idx);
     const isHoliday = entry.isHoliday;
 
-    row.getCell(1).value = new Date(entry.date + 'T00:00:00');
-    row.getCell(1).numFmt = 'dd-mmm-yyyy';
+    const [y, m, d] = entry.date.split('-').map(Number);
+    row.getCell(1).value = new Date(y, m - 1, d, 12, 0, 0);
+    row.getCell(1).numFmt = 'dddd, dd-mm-yyyy';
 
     if (!isHoliday && entry.workStart) {
       const s = timeStrToDate(entry.workStart);
@@ -222,7 +228,7 @@ async function buildFromScratch(state: TimesheetState): Promise<Blob> {
     row.commit();
   });
 
-  ws.getColumn(1).width = 14;
+  ws.getColumn(1).width = 22;
   ws.getColumn(2).width = 8;
   ws.getColumn(3).width = 8;
   ws.getColumn(4).width = 8;

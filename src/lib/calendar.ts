@@ -32,10 +32,11 @@ export function parseDate(dateStr: string): Date {
 
 export function formatDisplayDate(dateStr: string): string {
   const date = parseDate(dateStr);
+  const dayName = getDayName(date);
   const d = String(date.getDate()).padStart(2, '0');
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const y = date.getFullYear();
-  return `${d}-${m}-${y}`;
+  return `${dayName}, ${d}-${m}-${y}`;
 }
 
 export function calcHours(start: string, end: string): string {

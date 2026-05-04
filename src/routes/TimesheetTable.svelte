@@ -1,6 +1,7 @@
 <script lang="ts">
   import { timesheetStore, totalWorkHours, totalOTHours, workDaysCount } from '$lib/store';
   import { calcHours, formatDisplayDate, getDayName, parseDate } from '$lib/calendar';
+  import { refactorActivity } from '$lib/aiRefactor';
   import type { DayEntry } from '$lib/types';
 
   let { printMode = false } = $props<{ printMode?: boolean }>();
@@ -8,8 +9,28 @@
   let s = $state<ReturnType<typeof buildDefault>>( buildDefault() );
   timesheetStore.subscribe(v => s = v as any);
 
+  let polishing = $state<Record<string, boolean>>({});
+
   function buildDefault() {
-    return { meta: { month:1, year:2026, employeeName:'', projectName:'', clientName:'', holidays:[], logo:'', signatures:{}, supervisorName:'', supervisor2Name:'' }, entries: [] };
+    return { meta: { month:1, year:2026, employeeName:'', projectName:'', clientName:'', holidays:[], logo:'', signatures:{}, supervisorName:'', supervisor2Name:'', geminiApiKey:'' }, entries: [] };
+  }
+
+  async function aiPolish(date: string, text: string) {
+    if (!s.meta.geminiApiKey) {
+      alert('Please set your Gemini API Key in the Timesheet Info section first.');
+      return;
+    }
+    if (!text || text.trim().length === 0) return;
+
+    polishing[date] = true;
+    try {
+      const refactored = await refactorActivity(text, s.meta.geminiApiKey);
+      update(date, 'activity', refactored);
+    } catch (err: any) {
+      alert('AI Refactor failed: ' + err.message);
+    } finally {
+      polishing[date] = false;
+    }
   }
 
   function update(date: string, field: keyof DayEntry, value: string) {
@@ -181,19 +202,56 @@
               </span>
             </td>
 
-            <!-- Activity — always editable -->
-            <td class="border px-2 py-1 align-top" style="border-color:var(--c-border);min-width:280px;">
+            <!-- Activity — always editable with suggestions -->
+            <td class="border px-2 py-1 align-top relative group" style="border-color:var(--c-border);min-width:280px;">
               {#if !printMode}
-                <textarea
-                  value={entry.activity || ''}
-                  oninput={e => update(entry.date, 'activity', e.currentTarget.value)}
-                  rows="2"
-                  class="w-full text-xs bg-transparent border-0 outline-none resize-none leading-relaxed"
-                  style="color:var(--c-text);font-family:var(--font-sans);"
-                  placeholder={entry.isHoliday ? 'Kosong atau isi untuk lembur...' : 'Activity description...'}
-                ></textarea>
+                <div class="relative flex flex-col">
+                  <textarea
+                    value={entry.activity || ''}
+                    oninput={e => update(entry.date, 'activity', e.currentTarget.value)}
+                    rows="2"
+                    class="w-full text-xs bg-transparent border-0 outline-none resize-none leading-relaxed py-1 pr-14"
+                    style="color:var(--c-text);font-family:var(--font-sans);"
+                    placeholder={entry.isHoliday ? 'Kosong atau isi untuk lembur...' : 'Activity description...'}
+                  ></textarea>
+                  
+                  <div class="absolute right-0 top-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {#if s.meta.geminiApiKey && entry.activity}
+                      <button
+                        onclick={() => aiPolish(entry.date, entry.activity || '')}
+                        disabled={polishing[entry.date]}
+                        class="p-1 rounded hover:bg-white/10 disabled:opacity-50"
+                        title="AI Polish (Refactor)"
+                      >
+                        {#if polishing[entry.date]}
+                          <div class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        {:else}
+                          ✨
+                        {/if}
+                      </button>
+                    {/if}
+                    
+                    {#if s.entries.some(e => e.activity && e.activity.trim().length > 0 && e.activity !== entry.activity)}
+                      <div class="relative group/hist">
+                        <button class="p-1 rounded hover:bg-white/10" title="Recent Activities">📋</button>
+                        <div class="absolute right-full top-0 mr-2 w-64 max-h-48 overflow-y-auto z-50 rounded-lg shadow-xl hidden group-hover/hist:block"
+                          style="background:var(--c-surface);border:1px solid var(--c-border);">
+                          {#each [...new Set(s.entries.map(e => e.activity).filter(a => a && a.trim().length > 0 && a !== entry.activity))] as item}
+                            <button
+                              onclick={() => update(entry.date, 'activity', item)}
+                              class="w-full text-left px-3 py-2 text-[10px] hover:bg-white/5 border-b border-white/5 last:border-0"
+                              style="color:var(--c-muted);"
+                            >
+                              {item}
+                            </button>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
               {:else}
-                <div class="text-xs whitespace-pre-wrap leading-relaxed"
+                <div class="text-xs whitespace-pre-wrap leading-relaxed py-1"
                   style="color:{entry.isHoliday && !entry.workStart ? 'var(--c-muted)' : 'var(--c-text)'};">
                   {entry.activity || ''}
                 </div>
@@ -212,6 +270,12 @@
       </tfoot>
     </table>
   </div>
+
+  <datalist id="activity-suggestions">
+    {#each [...new Set(s.entries.map(e => e.activity).filter(a => a && a.trim().length > 0))] as activity}
+      <option value={activity}></option>
+    {/each}
+  </datalist>
 
   <!-- Summary + Signature -->
   <div class="mt-4 grid grid-cols-2 gap-4">

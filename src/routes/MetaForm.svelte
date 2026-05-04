@@ -48,14 +48,15 @@
     ['clientName',    'Client / Location','🏢'],
     ['supervisorName','Supervisor 1 (Diperiksa)', '👔'],
     ['supervisor2Name','Supervisor 2 (Disetujui)', '👔'],
+    ['geminiApiKey', 'Gemini API Key (for AI Polish)', '✨'],
   ] as [field, label, icon]}
     <div>
       <label class="block text-xs mb-1" style="color:var(--c-muted);">{icon} {label}</label>
-      <input type="text" value={s.meta[field] || ''}
+      <input type={field === 'geminiApiKey' ? 'password' : 'text'} value={s.meta[field] || ''}
         oninput={e => set(field, e.currentTarget.value)}
         class="w-full px-2 py-1.5 rounded-lg text-xs"
         style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-text);"
-        placeholder={label} />
+        placeholder={field === 'geminiApiKey' ? 'AI Studio API Key...' : label} />
     </div>
   {/each}
 </div>

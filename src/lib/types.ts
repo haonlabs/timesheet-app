@@ -26,6 +26,7 @@ export interface TimesheetMeta {
   projectName: string;
   clientName: string;
   holidays: Holiday[];
+  geminiApiKey?: string;
   logo?: string;         // base64
   signatures?: {
     employee?: string;   // base64
