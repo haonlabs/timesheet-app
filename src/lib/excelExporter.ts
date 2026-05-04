@@ -1,6 +1,13 @@
 import ExcelJS from 'exceljs';
 import type { TimesheetState } from './types';
 import { getMonthName } from './calendar';
+import {
+  getAttendanceDays,
+  getStandardWorkDays,
+  getStandardWorkHours,
+  parseHoursToMinutes,
+  toNonNegativeNumber,
+} from './summary';
 
 // Column mapping from the actual Lamjaya template:
 // B = Date, D = Work Start, F = Work End
@@ -15,6 +22,20 @@ function timeStrToDate(timeStr: string): Date | null {
   const d = new Date(1899, 11, 30); // Excel epoch base
   d.setHours(h, m || 0, 0, 0);
   return d;
+}
+
+function hasFormula(value: ExcelJS.CellValue): boolean {
+  return typeof value === 'string' && value.startsWith('=')
+    || !!value && typeof value === 'object' && 'formula' in value;
+}
+
+function hoursToExcelSerial(hours: string | undefined): number {
+  return parseHoursToMinutes(hours) / (24 * 60);
+}
+
+function setDurationCell(cell: ExcelJS.Cell, hours: string | undefined) {
+  cell.value = hoursToExcelSerial(hours);
+  cell.numFmt = '[h]:mm';
 }
 
 export async function exportToExcel(state: TimesheetState): Promise<Blob> {
@@ -105,7 +126,7 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
       const kCell = row.getCell(11); // K = Total Hour
       const lCell = row.getCell(12); // L = Total OT
       const kVal = kCell.value;
-      if (typeof kVal !== 'string' || !String(kVal).startsWith('=')) {
+      if (!hasFormula(kVal)) {
         // No formula, write computed value
         if (entry.totalHour) {
           const [h, m] = entry.totalHour.split(':').map(Number);
@@ -114,7 +135,7 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
         }
       }
       const lVal = lCell.value;
-      if (typeof lVal !== 'string' || !String(lVal).startsWith('=')) {
+      if (!hasFormula(lVal)) {
         if (entry.totalOT && entry.totalOT !== '0:00') {
           const [h, m] = entry.totalOT.split(':').map(Number);
           lCell.value = ((h || 0) * 60 + (m || 0)) / (24 * 60);
@@ -127,9 +148,37 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
   }
 
   // Update summary section
-  // L44 = work days count
-  const workDays = entries.filter(e => !e.isHoliday && e.workStart).length;
-  ws.getCell('L44').value = workDays;
+  // L44:L55 follows the Lamjaya template formulas.
+  const standardWorkDays = getStandardWorkDays(state);
+  const absentDays = toNonNegativeNumber(meta.totalAbsent);
+  const sickDays = toNonNegativeNumber(meta.totalSick);
+  const leaveDays = toNonNegativeNumber(meta.totalLeave);
+  const attendanceDays = getAttendanceDays(state);
+  const standardHours = getStandardWorkHours(meta);
+  const totalWorkSerial = entries.reduce((acc, entry) => acc + hoursToExcelSerial(entry.totalHour), 0);
+  const totalOTSerial = entries.reduce((acc, entry) => acc + hoursToExcelSerial(entry.totalOT), 0);
+
+  ws.getCell('L44').value = standardWorkDays;
+  ws.getCell('L45').value = absentDays;
+  ws.getCell('L46').value = sickDays;
+  ws.getCell('L47').value = leaveDays;
+  ws.getCell('L48').value = { formula: 'L44-(L45+L46+L47)', result: attendanceDays };
+  ws.getCell('I49').value = { formula: 'L48', result: attendanceDays };
+  ws.getCell('K49').value = { formula: 'L44', result: standardWorkDays };
+  ws.getCell('L49').value = { formula: 'IFERROR(L48/L44,0)', result: standardWorkDays ? attendanceDays / standardWorkDays : 0 };
+  ws.getCell('L49').numFmt = '0%';
+  setDurationCell(ws.getCell('L51'), standardHours);
+  ws.getCell('L52').value = { formula: 'J42', result: totalWorkSerial };
+  ws.getCell('L52').numFmt = '[h]:mm';
+  ws.getCell('L53').value = { formula: 'L42', result: totalOTSerial };
+  ws.getCell('L53').numFmt = '[h]:mm';
+  ws.getCell('L54').value = { formula: 'L52+L53', result: totalWorkSerial + totalOTSerial };
+  ws.getCell('L54').numFmt = '[h]:mm';
+  ws.getCell('L55').value = {
+    formula: 'IFERROR(L54/L51,0)',
+    result: hoursToExcelSerial(standardHours) ? (totalWorkSerial + totalOTSerial) / hoursToExcelSerial(standardHours) : 0,
+  };
+  ws.getCell('L55').numFmt = '0%';
   // Supervisor name P62
   if (meta.supervisorName) ws.getCell('P62').value = meta.supervisorName;
   if ((meta as any).supervisor2Name) ws.getCell('T62').value = (meta as any).supervisor2Name;
@@ -228,8 +277,71 @@ async function buildFromScratch(state: TimesheetState): Promise<Blob> {
     row.commit();
   });
 
-  ws.getColumn(1).width = 22;
-  ws.getColumn(2).width = 8;
+  const lastDataRow = 7 + entries.length;
+  const totalRowNum = lastDataRow + 1;
+  const totalRow = ws.getRow(totalRowNum);
+  totalRow.getCell(1).value = 'Total Hours ==>';
+  totalRow.getCell(1).font = { bold: true };
+  totalRow.getCell(6).value = { formula: `SUM(F8:F${lastDataRow})` };
+  totalRow.getCell(6).numFmt = '[h]:mm';
+  totalRow.getCell(7).value = { formula: `SUM(G8:G${lastDataRow})` };
+  totalRow.getCell(7).numFmt = '[h]:mm';
+  for (let c = 1; c <= 8; c++) {
+    totalRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDE8F5' } };
+    totalRow.getCell(c).font = { ...(totalRow.getCell(c).font || {}), bold: true };
+    totalRow.getCell(c).border = {
+      top: { style: 'thin' }, left: { style: 'thin' },
+      bottom: { style: 'thin' }, right: { style: 'thin' }
+    };
+  }
+  totalRow.commit();
+
+  const summaryStart = totalRowNum + 3;
+  const standardWorkDays = getStandardWorkDays(state);
+  const absentDays = toNonNegativeNumber(meta.totalAbsent);
+  const sickDays = toNonNegativeNumber(meta.totalSick);
+  const leaveDays = toNonNegativeNumber(meta.totalLeave);
+  const attendanceDays = getAttendanceDays(state);
+  const standardHours = getStandardWorkHours(meta);
+
+  ws.getCell(`A${summaryStart}`).value = 'Hari Kerja';
+  ws.getCell(`A${summaryStart}`).font = { bold: true };
+  [
+    ['a. Jumlah hari kerja satu bulan', standardWorkDays],
+    ['b. Jumlah hari pegawai Ijin', absentDays],
+    ['c. Jumlah hari pegawai sakit', sickDays],
+    ['d. Jumlah hari pegawai Cuti', leaveDays],
+  ].forEach(([label, value], idx) => {
+    const row = summaryStart + idx + 1;
+    ws.getCell(`A${row}`).value = label;
+    ws.getCell(`B${row}`).value = value;
+  });
+  ws.getCell(`A${summaryStart + 5}`).value = 'e. Jumlah kehadiran pegawai';
+  ws.getCell(`B${summaryStart + 5}`).value = { formula: `B${summaryStart + 1}-(B${summaryStart + 2}+B${summaryStart + 3}+B${summaryStart + 4})`, result: attendanceDays };
+  ws.getCell(`A${summaryStart + 6}`).value = 'f. Persentase Kehadiran';
+  ws.getCell(`B${summaryStart + 6}`).value = { formula: `IFERROR(B${summaryStart + 5}/B${summaryStart + 1},0)`, result: standardWorkDays ? attendanceDays / standardWorkDays : 0 };
+  ws.getCell(`B${summaryStart + 6}`).numFmt = '0%';
+
+  const hourStart = summaryStart + 8;
+  ws.getCell(`A${hourStart}`).value = 'Jam Kerja';
+  ws.getCell(`A${hourStart}`).font = { bold: true };
+  ws.getCell(`A${hourStart + 1}`).value = 'g. Total Jam Kerja Standar';
+  setDurationCell(ws.getCell(`B${hourStart + 1}`), standardHours);
+  ws.getCell(`A${hourStart + 2}`).value = 'h. Total Kehadiran Jam Kerja';
+  ws.getCell(`B${hourStart + 2}`).value = { formula: `F${totalRowNum}` };
+  ws.getCell(`B${hourStart + 2}`).numFmt = '[h]:mm';
+  ws.getCell(`A${hourStart + 3}`).value = 'i. Total Kehadiran Jam Lembur';
+  ws.getCell(`B${hourStart + 3}`).value = { formula: `G${totalRowNum}` };
+  ws.getCell(`B${hourStart + 3}`).numFmt = '[h]:mm';
+  ws.getCell(`A${hourStart + 4}`).value = 'j. Total Jam Kerja (h+i)';
+  ws.getCell(`B${hourStart + 4}`).value = { formula: `B${hourStart + 2}+B${hourStart + 3}` };
+  ws.getCell(`B${hourStart + 4}`).numFmt = '[h]:mm';
+  ws.getCell(`A${hourStart + 5}`).value = 'k. Presentase Jam Kehadiran';
+  ws.getCell(`B${hourStart + 5}`).value = { formula: `IFERROR(B${hourStart + 4}/B${hourStart + 1},0)` };
+  ws.getCell(`B${hourStart + 5}`).numFmt = '0%';
+
+  ws.getColumn(1).width = 34;
+  ws.getColumn(2).width = 12;
   ws.getColumn(3).width = 8;
   ws.getColumn(4).width = 8;
   ws.getColumn(5).width = 8;

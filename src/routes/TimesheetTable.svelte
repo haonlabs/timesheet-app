@@ -1,18 +1,48 @@
 <script lang="ts">
-  import { timesheetStore, totalWorkHours, totalOTHours, workDaysCount } from '$lib/store';
+  import {
+    attendanceDaysPercentage,
+    attendanceHoursPercentage,
+    standardWorkDaysCount,
+    standardWorkHours,
+    timesheetStore,
+    totalAttendanceHours,
+    totalOTHours,
+    totalWorkHours,
+    workDaysCount,
+  } from '$lib/store';
   import { calcHours, formatDisplayDate, getDayName, parseDate } from '$lib/calendar';
   import { refactorActivity } from '$lib/aiRefactor';
-  import type { DayEntry } from '$lib/types';
+  import type { DayEntry, TimesheetState } from '$lib/types';
 
   let { printMode = false } = $props<{ printMode?: boolean }>();
 
-  let s = $state<ReturnType<typeof buildDefault>>( buildDefault() );
+  let s = $state<TimesheetState>(buildDefault());
   timesheetStore.subscribe(v => s = v as any);
 
   let polishing = $state<Record<string, boolean>>({});
 
-  function buildDefault() {
-    return { meta: { month:1, year:2026, employeeName:'', projectName:'', clientName:'', holidays:[], logo:'', signatures:{}, supervisorName:'', supervisor2Name:'', geminiApiKey:'' }, entries: [] };
+  function buildDefault(): TimesheetState {
+    return {
+      meta: {
+        month:1,
+        year:2026,
+        employeeName:'',
+        projectName:'',
+        clientName:'',
+        holidays:[],
+        logo:'',
+        signatures:{},
+        supervisorName:'',
+        supervisor2Name:'',
+        geminiApiKey:'',
+        totalAbsent: 0,
+        totalSick: 0,
+        totalLeave: 0,
+        standardWorkHours: '168:00',
+      },
+      entries: [],
+      templateParsed: false,
+    };
   }
 
   async function aiPolish(date: string, text: string) {
@@ -48,6 +78,10 @@
       if (start && end) patch.totalOT = calcHours(start, end);
     }
     timesheetStore.updateEntry(date, patch);
+  }
+
+  function primeTimePicker(input: HTMLInputElement) {
+    if (!input.value) input.value = '06:00';
   }
 
   // Holiday rows CAN be edited (lembur), just visually different
@@ -145,6 +179,8 @@
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
                 <input type="time" value={entry.workStart || ''}
+                  min="06:00"
+                  onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'workStart', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
@@ -157,6 +193,8 @@
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
                 <input type="time" value={entry.workEnd || ''}
+                  min="06:00"
+                  onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'workEnd', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
@@ -169,6 +207,8 @@
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
                 <input type="time" value={entry.otStart || ''}
+                  min="06:00"
+                  onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'otStart', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
@@ -181,6 +221,8 @@
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
                 <input type="time" value={entry.otEnd || ''}
+                  min="06:00"
+                  onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'otEnd', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
@@ -284,12 +326,12 @@
       <h3 class="font-semibold text-sm mb-3" style="color:var(--c-accent);">Hari Kerja</h3>
       <table class="w-full text-xs"><tbody>
         {#each [
-          ['a. Jumlah hari kerja satu bulan', s.entries.filter(e => !e.isHoliday).length],
-          ['b. Jumlah hari pegawai Ijin', ''],
-          ['c. Jumlah hari pegawai sakit', 0],
-          ['d. Jumlah hari pegawai Cuti', 0],
+          ['a. Jumlah hari kerja satu bulan', $standardWorkDaysCount],
+          ['b. Jumlah hari pegawai Ijin', s.meta.totalAbsent ?? 0],
+          ['c. Jumlah hari pegawai sakit', s.meta.totalSick ?? 0],
+          ['d. Jumlah hari pegawai Cuti', s.meta.totalLeave ?? 0],
           ['e. Jumlah kehadiran pegawai', $workDaysCount],
-          ['f. Persentase Kehadiran', $workDaysCount > 0 ? Math.round(($workDaysCount/Math.max(1,s.entries.filter(e=>!e.isHoliday).length))*100)+'%' : '0%'],
+          ['f. Persentase Kehadiran', $attendanceDaysPercentage],
         ] as [lbl, val]}
           <tr>
             <td class="py-0.5" style="color:var(--c-muted);">{lbl}</td>
@@ -300,11 +342,11 @@
       <h3 class="font-semibold text-sm mt-3 mb-2" style="color:var(--c-accent);">Jam Kerja</h3>
       <table class="w-full text-xs"><tbody>
         {#each [
-          ['g. Total Jam Kerja Standar', '168:00'],
+          ['g. Total Jam Kerja Standar', $standardWorkHours],
           ['h. Total Kehadiran Jam Kerja', $totalWorkHours],
           ['i. Total Kehadiran Jam Lembur', $totalOTHours],
-          ['j. Total Jam Kerja (h+i)', $totalWorkHours],
-          ['k. Presentase Jam Kehadiran', '98%'],
+          ['j. Total Jam Kerja (h+i)', $totalAttendanceHours],
+          ['k. Presentase Jam Kehadiran', $attendanceHoursPercentage],
         ] as [lbl, val]}
           <tr>
             <td class="py-0.5" style="color:var(--c-muted);">{lbl}</td>

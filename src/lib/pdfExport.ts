@@ -1,5 +1,14 @@
 import type { TimesheetState } from './types';
 import { formatDisplayDate, getMonthName, parseDate, getDayName } from './calendar';
+import {
+  addHourStrings,
+  formatWholePercent,
+  getAttendanceDays,
+  getStandardWorkDays,
+  getStandardWorkHours,
+  parseHoursToMinutes,
+  toNonNegativeNumber,
+} from './summary';
 
 export function exportToPDF(state: TimesheetState) {
   const html = buildPrintHTML(state);
@@ -60,7 +69,15 @@ function buildPrintHTML(state: TimesheetState): string {
     return acc;
   }, 0);
   const totalOTStr = `${Math.floor(totalOTMin/60)}:${String(totalOTMin%60).padStart(2,'0')}`;
-  const workDays = entries.filter(e => !e.isHoliday && e.workStart).length;
+  const standardWorkDays = getStandardWorkDays(state);
+  const absentDays = toNonNegativeNumber(meta.totalAbsent);
+  const sickDays = toNonNegativeNumber(meta.totalSick);
+  const leaveDays = toNonNegativeNumber(meta.totalLeave);
+  const attendanceDays = getAttendanceDays(state);
+  const attendanceDaysPct = formatWholePercent(attendanceDays, standardWorkDays);
+  const standardHours = getStandardWorkHours(meta);
+  const totalAttendanceHours = addHourStrings(totalHStr, totalOTStr);
+  const attendanceHoursPct = formatWholePercent(parseHoursToMinutes(totalAttendanceHours), parseHoursToMinutes(standardHours));
 
   // Build table rows
   const rows = entries.map(entry => {
@@ -191,20 +208,20 @@ function buildPrintHTML(state: TimesheetState): string {
       <td style="width:220px;padding:8px 10px;border-right:1px solid #ccc;vertical-align:top;">
         <div style="font-weight:700;font-size:8pt;color:#1e3a5f;margin-bottom:3px;">Hari Kerja :</div>
         <table style="width:100%;font-size:7.5pt;border-collapse:collapse;">
-          <tr><td style="color:#444;padding:1px 0;">a. Jumlah hari kerja satu bulan</td><td style="text-align:right;font-weight:600;">${workDays}</td></tr>
-          <tr><td style="color:#444;padding:1px 0;">b. Jumlah hari pegawai Ijin</td><td style="text-align:right;font-weight:600;"></td></tr>
-          <tr><td style="color:#444;padding:1px 0;">c. Jumlah hari pegawai sakit</td><td style="text-align:right;font-weight:600;">0</td></tr>
-          <tr><td style="color:#444;padding:1px 0;">d. Jumlah hari pegawai Cuti</td><td style="text-align:right;font-weight:600;">0</td></tr>
-          <tr><td style="color:#444;padding:1px 0;">e. Jumlah kehadiran pegawai</td><td style="text-align:right;font-weight:600;">${workDays}</td></tr>
-          <tr><td style="color:#444;padding:1px 0;">f. Persentase Kehadiran</td><td style="text-align:right;font-weight:600;">${workDays}/${workDays} 100%</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">a. Jumlah hari kerja satu bulan</td><td style="text-align:right;font-weight:600;">${standardWorkDays}</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">b. Jumlah hari pegawai Ijin</td><td style="text-align:right;font-weight:600;">${absentDays}</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">c. Jumlah hari pegawai sakit</td><td style="text-align:right;font-weight:600;">${sickDays}</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">d. Jumlah hari pegawai Cuti</td><td style="text-align:right;font-weight:600;">${leaveDays}</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">e. Jumlah kehadiran pegawai</td><td style="text-align:right;font-weight:600;">${attendanceDays}</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">f. Persentase Kehadiran</td><td style="text-align:right;font-weight:600;">${attendanceDaysPct}</td></tr>
         </table>
         <div style="font-weight:700;font-size:8pt;color:#1e3a5f;margin:5px 0 3px;">Jam Kerja :</div>
         <table style="width:100%;font-size:7.5pt;border-collapse:collapse;">
-          <tr><td style="color:#444;padding:1px 0;">g. Total Jam Kerja Standar</td><td style="text-align:right;font-weight:600;font-family:monospace;">168:00</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">g. Total Jam Kerja Standar</td><td style="text-align:right;font-weight:600;font-family:monospace;">${standardHours}</td></tr>
           <tr><td style="color:#444;padding:1px 0;">h. Total Kehadiran Jam Kerja</td><td style="text-align:right;font-weight:600;font-family:monospace;">${totalHStr}</td></tr>
           <tr><td style="color:#444;padding:1px 0;">i. Total Kehadiran Jam Lembur</td><td style="text-align:right;font-weight:600;font-family:monospace;">${totalOTStr}</td></tr>
-          <tr><td style="color:#444;padding:1px 0;">j. Total Jam Kerja (h+i)</td><td style="text-align:right;font-weight:600;font-family:monospace;">${totalHStr}</td></tr>
-          <tr><td style="color:#444;padding:1px 0;">k. Presentase Jam Kehadiran</td><td style="text-align:right;font-weight:600;">98%</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">j. Total Jam Kerja (h+i)</td><td style="text-align:right;font-weight:600;font-family:monospace;">${totalAttendanceHours}</td></tr>
+          <tr><td style="color:#444;padding:1px 0;">k. Presentase Jam Kehadiran</td><td style="text-align:right;font-weight:600;">${attendanceHoursPct}</td></tr>
         </table>
       </td>
       <td style="padding:8px 10px;vertical-align:top;">

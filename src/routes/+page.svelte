@@ -10,6 +10,7 @@
   import MetaForm from './MetaForm.svelte';
   import HolidayManager from './HolidayManager.svelte';
   import AssetUpload from './AssetUpload.svelte';
+  import type { DayEntry, TimesheetState } from '$lib/types';
 
   let activeTab = $state('editor');
   let isLoading = $state(false);
@@ -18,16 +19,33 @@
   let toastType = $state('ok');
   let toastVisible = $state(false);
   let templateUploaded = $state(false);
-  let storeState = $state({ meta: { month: new Date().getMonth()+1, year: new Date().getFullYear(), employeeName: '', projectName: '', clientName: '', holidays: [], logo: '', signatures: {} }, entries: [] });
+  let storeState = $state<TimesheetState>({
+    meta: {
+      month: new Date().getMonth()+1,
+      year: new Date().getFullYear(),
+      employeeName: '',
+      projectName: '',
+      clientName: '',
+      holidays: [],
+      logo: '',
+      signatures: {},
+      totalAbsent: 0,
+      totalSick: 0,
+      totalLeave: 0,
+      standardWorkHours: '168:00',
+    },
+    entries: [],
+    templateParsed: false,
+  });
 
   timesheetStore.subscribe(v => storeState = v);
 
-  function showToast(msg, type = 'ok') {
+  function showToast(msg: string, type = 'ok') {
     toastMsg = msg; toastType = type; toastVisible = true;
     setTimeout(() => toastVisible = false, 3500);
   }
 
-  async function loadHolidaysAndGenerate(month, year, preEntries) {
+  async function loadHolidaysAndGenerate(month: number, year: number, preEntries?: DayEntry[]) {
     loadingMsg = 'Fetching Indonesian holidays...';
     try {
       const apiHolidays = await fetchIndonesianHolidays(year);
@@ -39,7 +57,7 @@
     } catch(e) { console.error(e); }
   }
 
-  async function handleTemplateUpload(file) {
+  async function handleTemplateUpload(file: File) {
     isLoading = true; loadingMsg = 'Parsing template...';
     try {
       const buf = await file.arrayBuffer();
@@ -56,7 +74,7 @@
     finally { isLoading = false; }
   }
 
-  async function onMonthYearChange(month, year) {
+  async function onMonthYearChange(month: number, year: number) {
     isLoading = true; loadingMsg = 'Generating calendar...';
     try {
       timesheetStore.setMeta({ month, year });

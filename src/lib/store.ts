@@ -1,6 +1,15 @@
 import { writable, derived } from 'svelte/store';
 import type { TimesheetState, DayEntry, TimesheetMeta, Holiday } from './types';
 import { generateDaysForMonth } from './calendar';
+import {
+  DEFAULT_STANDARD_WORK_HOURS,
+  addHourStrings,
+  formatWholePercent,
+  getAttendanceDays,
+  getStandardWorkDays,
+  getStandardWorkHours,
+  parseHoursToMinutes,
+} from './summary';
 
 const defaultMeta: TimesheetMeta = {
   month: new Date().getMonth() + 1,
@@ -11,6 +20,10 @@ const defaultMeta: TimesheetMeta = {
   holidays: [],
   supervisorName: '',
   supervisor2Name: '',
+  totalAbsent: 0,
+  totalSick: 0,
+  totalLeave: 0,
+  standardWorkHours: DEFAULT_STANDARD_WORK_HOURS,
 };
 
 const defaultState: TimesheetState = {
@@ -121,6 +134,23 @@ export const totalOTHours = derived(timesheetStore, $s => {
   return `${h}:${String(m).padStart(2, '0')}`;
 });
 
-export const workDaysCount = derived(timesheetStore, $s =>
-  $s.entries.filter(e => !e.isHoliday && e.workStart).length
+export const standardWorkDaysCount = derived(timesheetStore, $s => getStandardWorkDays($s));
+
+export const workDaysCount = derived(timesheetStore, $s => getAttendanceDays($s));
+
+export const attendanceDaysPercentage = derived(timesheetStore, $s =>
+  formatWholePercent(getAttendanceDays($s), getStandardWorkDays($s))
+);
+
+export const standardWorkHours = derived(timesheetStore, $s => getStandardWorkHours($s.meta));
+
+export const totalAttendanceHours = derived(
+  [totalWorkHours, totalOTHours],
+  ([$totalWorkHours, $totalOTHours]) => addHourStrings($totalWorkHours, $totalOTHours)
+);
+
+export const attendanceHoursPercentage = derived(
+  [totalAttendanceHours, standardWorkHours],
+  ([$totalAttendanceHours, $standardWorkHours]) =>
+    formatWholePercent(parseHoursToMinutes($totalAttendanceHours), parseHoursToMinutes($standardWorkHours))
 );

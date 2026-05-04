@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import type { TimesheetMeta, DayEntry } from './types';
 import { formatDate, getDayName, isWeekend } from './calendar';
+import { DEFAULT_STANDARD_WORK_HOURS, formatMinutesAsHours } from './summary';
 
 export interface ParseResult {
   meta: Partial<TimesheetMeta>;
@@ -24,6 +25,10 @@ export async function parseTimesheetExcel(buffer: ArrayBuffer): Promise<ParseRes
   let clientName = '';
   let month = new Date().getMonth() + 1;
   let year = new Date().getFullYear();
+  let totalAbsent = 0;
+  let totalSick = 0;
+  let totalLeave = 0;
+  let standardWorkHours = DEFAULT_STANDARD_WORK_HOURS;
   const entries: DayEntry[] = [];
 
   // Read meta from header cells
@@ -37,6 +42,10 @@ export async function parseTimesheetExcel(buffer: ArrayBuffer): Promise<ParseRes
       month = periodStart.getMonth() + 1;
       year = periodStart.getFullYear();
     }
+    totalAbsent = toNumber(ws.getCell('L45').value);
+    totalSick = toNumber(ws.getCell('L46').value);
+    totalLeave = toNumber(ws.getCell('L47').value);
+    standardWorkHours = toDurationStr(ws.getCell('L51').value) || DEFAULT_STANDARD_WORK_HOURS;
   } catch { /* ignore */ }
 
   // Scan rows for date entries (rows 11 onwards, col B)
@@ -95,7 +104,60 @@ export async function parseTimesheetExcel(buffer: ArrayBuffer): Promise<ParseRes
     }
   });
 
-  return { meta: { employeeName, projectName, clientName, month, year }, entries, templateBuffer: buffer };
+  return {
+    meta: {
+      employeeName,
+      projectName,
+      clientName,
+      month,
+      year,
+      totalAbsent,
+      totalSick,
+      totalLeave,
+      standardWorkHours,
+    },
+    entries,
+    templateBuffer: buffer,
+  };
+}
+
+function formulaResult(val: ExcelJS.CellValue): ExcelJS.CellValue {
+  if (val && typeof val === 'object' && 'result' in val) {
+    return val.result as ExcelJS.CellValue;
+  }
+  return val;
+}
+
+function toNumber(val: ExcelJS.CellValue): number {
+  const resolved = formulaResult(val);
+  if (typeof resolved === 'number' && Number.isFinite(resolved)) return resolved;
+  if (typeof resolved === 'string') {
+    const parsed = Number(resolved);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function toDurationStr(val: ExcelJS.CellValue): string {
+  const resolved = formulaResult(val);
+  if (typeof resolved === 'number') {
+    return formatMinutesAsHours(Math.round(resolved * 24 * 60));
+  }
+  if (resolved instanceof Date) {
+    const base = Date.UTC(1899, 11, 30);
+    const current = Date.UTC(
+      resolved.getFullYear(),
+      resolved.getMonth(),
+      resolved.getDate(),
+      resolved.getHours(),
+      resolved.getMinutes()
+    );
+    return formatMinutesAsHours(Math.round((current - base) / 60000));
+  }
+  if (typeof resolved === 'string' && /^\d+:\d{2}$/.test(resolved.trim())) {
+    return resolved.trim();
+  }
+  return '';
 }
 
 function toTimeStr(val: ExcelJS.CellValue): string {

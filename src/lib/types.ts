@@ -17,6 +17,7 @@ export interface DayEntry {
   holidayName?: string;
   holidayType?: Holiday['type'];
   workType?: 'WFH' | 'WFO' | '';
+  overtimeOnHoliday?: boolean;
 }
 
 export interface TimesheetMeta {
@@ -39,6 +40,7 @@ export interface TimesheetMeta {
   totalAbsent?: number;
   totalSick?: number;
   totalLeave?: number;
+  standardWorkHours?: string;
 }
 
 export interface TimesheetState {
