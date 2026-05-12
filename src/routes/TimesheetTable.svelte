@@ -70,12 +70,12 @@
     if (field === 'workStart' || field === 'workEnd') {
       const start = field === 'workStart' ? value : entry.workStart || '';
       const end   = field === 'workEnd'   ? value : entry.workEnd   || '';
-      if (start && end) patch.totalHour = calcHours(start, end);
+      patch.totalHour = (start && end) ? calcHours(start, end) : '';
     }
     if (field === 'otStart' || field === 'otEnd') {
       const start = field === 'otStart' ? value : entry.otStart || '';
       const end   = field === 'otEnd'   ? value : entry.otEnd   || '';
-      if (start && end) patch.totalOT = calcHours(start, end);
+      patch.totalOT = (start && end) ? calcHours(start, end) : '0:00';
     }
     timesheetStore.updateEntry(date, patch);
   }
@@ -90,11 +90,23 @@
   function rowStyle(e: DayEntry): string {
     if (e.holidayType === 'weekend')    return 'background:var(--c-weekend);';
     if (e.holidayType === 'public')     return 'background:var(--c-holiday);border-left:3px solid var(--c-danger);';
-    if (e.holidayType === 'collective') return 'background:#1a1a35;border-left:3px solid var(--c-accent2);';
-    if (e.holidayType === 'manual')     return 'background:#0d1f0d;border-left:3px solid var(--c-success);';
+    if (e.holidayType === 'collective') return 'background:var(--c-collective);border-left:3px solid var(--c-accent2);';
+    if (e.holidayType === 'manual')     return 'background:var(--c-manual);border-left:3px solid var(--c-success);';
     if (e.workType === 'WFH')           return 'background:var(--c-wfh);';
     if (e.workType === 'WFO')           return 'background:var(--c-wfo);';
     return '';
+  }
+
+  function autoResize(el: HTMLTextAreaElement) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  function growAction(el: HTMLTextAreaElement) {
+    autoResize(el);
+    const handler = () => autoResize(el);
+    el.addEventListener('input', handler);
+    return { destroy() { el.removeEventListener('input', handler); } };
   }
 
   function labelColor(e: DayEntry): string {
@@ -250,9 +262,10 @@
                 <div class="relative flex flex-col">
                   <textarea
                     value={entry.activity || ''}
-                    oninput={e => update(entry.date, 'activity', e.currentTarget.value)}
-                    rows="2"
-                    class="w-full text-xs bg-transparent border-0 outline-none resize-none leading-relaxed py-1 pr-14"
+                    oninput={e => { update(entry.date, 'activity', e.currentTarget.value); autoResize(e.currentTarget); }}
+                    rows="1"
+                    use:growAction
+                    class="w-full text-xs bg-transparent border-0 outline-none resize-none leading-relaxed py-1 pr-14 overflow-hidden"
                     style="color:var(--c-text);font-family:var(--font-sans);"
                     placeholder={entry.isHoliday ? 'Kosong atau isi untuk lembur...' : 'Activity description...'}
                   ></textarea>

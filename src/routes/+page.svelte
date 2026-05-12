@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { timesheetStore, totalWorkHours, totalOTHours, workDaysCount } from '$lib/store';
+  import { timesheetStore, totalWorkHours, totalOTHours, workDaysCount, themeStore, themes } from '$lib/store';
+  import type { ThemeId } from '$lib/store';
   import { fetchIndonesianHolidays, generateDaysForMonth, mergeHolidays, getMonthName } from '$lib/calendar';
   import { parseTimesheetExcel } from '$lib/excelParser';
   import { exportToExcel } from '$lib/excelExporter';
@@ -19,6 +20,9 @@
   let toastType = $state('ok');
   let toastVisible = $state(false);
   let templateUploaded = $state(false);
+  let showThemePicker = $state(false);
+  let activeTheme = $state<ThemeId>('light');
+  themeStore.subscribe(v => activeTheme = v);
   let storeState = $state<TimesheetState>({
     meta: {
       month: new Date().getMonth()+1,
@@ -100,6 +104,14 @@
     exportToPDF(storeState);
   }
 
+  function clearData() {
+    if (!confirm('Clear all saved data? This cannot be undone.')) return;
+    timesheetStore.reset();
+    themeStore.reset();
+    templateUploaded = false;
+    showToast('Data cleared.');
+  }
+
   async function startFresh() {
     const m = storeState.meta.month; const y = storeState.meta.year;
     isLoading = true; loadingMsg = 'Setting up...';
@@ -112,10 +124,13 @@
   }
 
   onMount(async () => {
+    document.documentElement.setAttribute('data-theme', activeTheme);
     if (storeState.entries.length === 0) {
       isLoading = true; loadingMsg = 'Loading holidays...';
       try { await loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year); }
       finally { isLoading = false; }
+    } else {
+      templateUploaded = true;
     }
   });
 </script>
@@ -142,6 +157,32 @@
           </button>
         {/each}
       </nav>
+      <div class="relative ml-2">
+        <button
+          onclick={() => showThemePicker = !showThemePicker}
+          class="px-2 py-1.5 rounded-md text-sm transition-all flex items-center gap-1.5"
+          style="color:var(--c-muted);border:1px solid var(--c-border);"
+          title="Pick theme">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:{themes.find(t=>t.id===activeTheme)?.accent ?? '#4f8ef7'};"></span>
+          <span class="hidden sm:inline text-xs">Theme</span>
+        </button>
+        {#if showThemePicker}
+          <div class="fixed inset-0 z-[299]" onclick={() => showThemePicker = false}></div>
+          <div class="absolute right-0 top-full mt-1 z-[300] rounded-xl shadow-xl p-2 flex flex-col gap-1 min-w-[120px]"
+            style="background:var(--c-surface);border:1px solid var(--c-border);">
+            {#each themes as t}
+              <button
+                onclick={() => { themeStore.set(t.id); showThemePicker = false; }}
+                class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-left transition-all hover:opacity-80"
+                style="background:{activeTheme===t.id ? 'var(--c-surface2)' : 'transparent'};color:var(--c-text);border:1px solid {activeTheme===t.id ? 'var(--c-border)' : 'transparent'};">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{t.accent};flex-shrink:0;"></span>
+                {t.label}
+                {#if activeTheme === t.id}<span style="color:var(--c-accent);margin-left:auto;">✓</span>{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <div class="hidden lg:flex items-center gap-4 text-xs" style="color:var(--c-muted);">
         <span>Days: <b style="color:var(--c-text);">{$workDaysCount}</b></span>
         <span>Hours: <b style="color:var(--c-success);">{$totalWorkHours}</b></span>
@@ -154,6 +195,10 @@
         <button onclick={handleExportPDF}
           class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
           style="background:var(--c-danger);color:white;">🖨 PDF</button>
+        <button onclick={clearData}
+          class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
+          style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-muted);"
+          title="Clear all saved data">🗑 Clear</button>
       </div>
     </div>
   </header>
@@ -215,7 +260,7 @@
     {:else if activeTab === 'assets'}
       <AssetUpload />
     {:else if activeTab === 'preview'}
-      <div class="rounded-xl overflow-auto" style="background:white;color:#000;">
+      <div class="rounded-xl overflow-auto" style="background:var(--c-bg);color:var(--c-text);">
         <div id="print-area" class="p-6">
           <TimesheetTable printMode={true} />
         </div>

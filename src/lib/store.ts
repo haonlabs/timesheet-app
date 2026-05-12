@@ -11,6 +11,31 @@ import {
   parseHoursToMinutes,
 } from './summary';
 
+const LS_KEY_TIMESHEET = 'timesheet_v1';
+const LS_KEY_THEME = 'timesheet_theme_v1';
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  if (typeof localStorage === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveToStorage(key: string, value: unknown) {
+  if (typeof localStorage === 'undefined') return;
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
+}
+
+function clearStorage() {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(LS_KEY_TIMESHEET);
+  localStorage.removeItem(LS_KEY_THEME);
+}
+
 const defaultMeta: TimesheetMeta = {
   month: new Date().getMonth() + 1,
   year: new Date().getFullYear(),
@@ -33,7 +58,13 @@ const defaultState: TimesheetState = {
 };
 
 function createTimesheetStore() {
-  const { subscribe, set, update } = writable<TimesheetState>(defaultState);
+  const initial = loadFromStorage<TimesheetState>(LS_KEY_TIMESHEET, defaultState);
+  const { subscribe, set, update } = writable<TimesheetState>(initial);
+
+  subscribe(state => {
+    const { templateBuffer: _, ...toSave } = state as TimesheetState & { templateBuffer?: unknown };
+    saveToStorage(LS_KEY_TIMESHEET, toSave);
+  });
 
   return {
     subscribe, set, update,
@@ -85,7 +116,10 @@ function createTimesheetStore() {
       update(s => ({ ...s, templateBuffer: buffer, templateParsed: true }));
     },
 
-    reset() { set(defaultState); }
+    reset() {
+      clearStorage();
+      set(defaultState);
+    },
   };
 }
 
@@ -98,7 +132,6 @@ function regenerateWithHolidays(entries: DayEntry[], holidays: Holiday[]): DayEn
         isHoliday: true,
         holidayName: h.name,
         holidayType: h.type,
-        // Don't override activity if user has filled something in overtimeOnHoliday mode
         activity: entry.overtimeOnHoliday ? entry.activity : (entry.activity || h.name),
       };
     }
@@ -107,6 +140,43 @@ function regenerateWithHolidays(entries: DayEntry[], holidays: Holiday[]): DayEn
 }
 
 export const timesheetStore = createTimesheetStore();
+
+export type ThemeId = 'dark' | 'light' | 'ocean' | 'forest' | 'rose';
+
+export interface ThemeDef {
+  id: ThemeId;
+  label: string;
+  accent: string;
+  bg: string;
+}
+
+export const themes: ThemeDef[] = [
+  { id: 'dark',   label: 'Dark',   accent: '#4f8ef7', bg: '#0f1117' },
+  { id: 'light',  label: 'Light',  accent: '#2563eb', bg: '#f4f6fb' },
+  { id: 'ocean',  label: 'Ocean',  accent: '#38bdf8', bg: '#0a1628' },
+  { id: 'forest', label: 'Forest', accent: '#4ade80', bg: '#0b1a0e' },
+  { id: 'rose',   label: 'Rose',   accent: '#fb7185', bg: '#1a0d12' },
+];
+
+function createThemeStore() {
+  const saved = loadFromStorage<ThemeId>(LS_KEY_THEME, 'light');
+  const { subscribe, set } = writable<ThemeId>(saved);
+  return {
+    subscribe,
+    set(id: ThemeId) {
+      set(id);
+      saveToStorage(LS_KEY_THEME, id);
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', id);
+      }
+    },
+    reset() {
+      this.set('light');
+    },
+  };
+}
+
+export const themeStore = createThemeStore();
 
 export const totalWorkHours = derived(timesheetStore, $s => {
   let total = 0;

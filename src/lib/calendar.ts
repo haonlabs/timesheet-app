@@ -84,16 +84,16 @@ export function generateDaysForMonth(
       });
     } else {
       const isOff = weekend || !!holiday;
+      const workStart = isOff ? '' : '08:00';
+      const workEnd   = isOff ? '' : '17:00';
       entries.push({
         date: dateStr,
-        // Default working hours only for normal workdays
-        workStart: isOff ? '' : '8:00',
-        workEnd: isOff ? '' : '17:00',
+        workStart,
+        workEnd,
         otStart: '',
         otEnd: '',
-        totalHour: isOff ? '' : '9:00',
+        totalHour: isOff ? '' : calcHours(workStart, workEnd),
         totalOT: '0:00',
-        // Activity: show holiday name, but leave blank so user can fill lembur
         activity: holiday?.name || (weekend ? getDayName(date) : ''),
         isHoliday: isOff,
         holidayName: holiday?.name || (weekend ? getDayName(date) : undefined),
