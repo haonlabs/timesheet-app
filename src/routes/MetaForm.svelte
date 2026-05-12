@@ -3,7 +3,7 @@
   import { MONTH_NAMES_ID } from '$lib/calendar';
   import type { TimesheetMeta } from '$lib/types';
 
-  let { onMonthYearChange } = $props<{ onMonthYearChange: (m: number, y: number) => void }>();
+  let { onMonthYearChange } = $props<{ onMonthYearChange: (m: number, y: number, startDate: number) => void }>();
 
   let s = $state<{ meta: TimesheetMeta }>({
     meta: {
@@ -51,7 +51,7 @@
     <div>
       <label class="block text-xs mb-1" style="color:var(--c-muted);">Month</label>
       <select value={s.meta.month}
-        onchange={e => { set('month', +e.currentTarget.value); onMonthYearChange(+e.currentTarget.value, s.meta.year); }}
+        onchange={e => { set('month', +e.currentTarget.value); onMonthYearChange(+e.currentTarget.value, s.meta.year, s.meta.startDate ?? 1); }}
         class="w-full px-2 py-1.5 rounded-lg text-xs"
         style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-text);">
         {#each MONTH_NAMES_ID as name, i}
@@ -62,7 +62,7 @@
     <div>
       <label class="block text-xs mb-1" style="color:var(--c-muted);">Year</label>
       <select value={s.meta.year}
-        onchange={e => { set('year', +e.currentTarget.value); onMonthYearChange(s.meta.month, +e.currentTarget.value); }}
+        onchange={e => { set('year', +e.currentTarget.value); onMonthYearChange(s.meta.month, +e.currentTarget.value, s.meta.startDate ?? 1); }}
         class="w-full px-2 py-1.5 rounded-lg text-xs"
         style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-text);">
         {#each years as y}
@@ -70,6 +70,16 @@
         {/each}
       </select>
     </div>
+  </div>
+
+  <div>
+    <label class="block text-xs mb-1" style="color:var(--c-muted);">📅 Start Date (day of month)</label>
+    <input type="number" min="1" max="31" step="1" value={s.meta.startDate ?? 1}
+      oninput={e => { set('startDate', +e.currentTarget.value); onMonthYearChange(s.meta.month, s.meta.year, +e.currentTarget.value); }}
+      class="w-full px-2 py-1.5 rounded-lg text-xs"
+      style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-text);"
+      placeholder="1" />
+    <p class="text-[10px] mt-1" style="color:var(--c-muted);">Timesheet will automatically cover the total number of days in the selected month (e.g., Feb: 4th → Mar 3rd = 28 days)</p>
   </div>
 
   {#each textFields as [field, label, icon]}

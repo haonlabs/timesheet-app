@@ -49,14 +49,14 @@
     setTimeout(() => toastVisible = false, 3500);
   }
 
-  async function loadHolidaysAndGenerate(month: number, year: number, preEntries?: DayEntry[]) {
+  async function loadHolidaysAndGenerate(month: number, year: number, startDate: number, preEntries?: DayEntry[]) {
     loadingMsg = 'Fetching Indonesian holidays...';
     try {
       const apiHolidays = await fetchIndonesianHolidays(year);
       const manualHolidays = storeState.meta.holidays.filter(h => h.type === 'manual');
       const merged = mergeHolidays(apiHolidays, manualHolidays);
       timesheetStore.setHolidays(merged);
-      const entries = generateDaysForMonth(month, year, merged, preEntries || storeState.entries);
+      const entries = generateDaysForMonth(month, year, merged, preEntries || storeState.entries, startDate);
       timesheetStore.setEntries(entries);
     } catch(e) { console.error(e); }
   }
@@ -70,19 +70,20 @@
       if (result.meta.employeeName) timesheetStore.setMeta(result.meta);
       const m = result.meta.month || new Date().getMonth()+1;
       const y = result.meta.year || new Date().getFullYear();
-      timesheetStore.setMeta({ month: m, year: y });
-      await loadHolidaysAndGenerate(m, y, result.entries.length > 0 ? result.entries : undefined);
+      const sd = result.meta.startDate || 1;
+      timesheetStore.setMeta({ month: m, year: y, startDate: sd });
+      await loadHolidaysAndGenerate(m, y, sd, result.entries.length > 0 ? result.entries : undefined);
       templateUploaded = true;
       showToast('Template imported!');
     } catch(e) { showToast('Failed to parse template', 'err'); console.error(e); }
     finally { isLoading = false; }
   }
 
-  async function onMonthYearChange(month: number, year: number) {
+  async function onMonthYearChange(month: number, year: number, startDate: number) {
     isLoading = true; loadingMsg = 'Generating calendar...';
     try {
-      timesheetStore.setMeta({ month, year });
-      await loadHolidaysAndGenerate(month, year);
+      timesheetStore.setMeta({ month, year, startDate });
+      await loadHolidaysAndGenerate(month, year, startDate);
     } finally { isLoading = false; }
   }
 
@@ -113,11 +114,11 @@
   }
 
   async function startFresh() {
-    const m = storeState.meta.month; const y = storeState.meta.year;
+    const m = storeState.meta.month; const y = storeState.meta.year; const sd = storeState.meta.startDate || 1;
     isLoading = true; loadingMsg = 'Setting up...';
     try {
-      timesheetStore.setMeta({ month: m, year: y });
-      await loadHolidaysAndGenerate(m, y);
+      timesheetStore.setMeta({ month: m, year: y, startDate: sd });
+      await loadHolidaysAndGenerate(m, y, sd);
       templateUploaded = true;
       showToast('Ready! Fill in your timesheet.');
     } finally { isLoading = false; }
@@ -127,7 +128,7 @@
     document.documentElement.setAttribute('data-theme', activeTheme);
     if (storeState.entries.length === 0) {
       isLoading = true; loadingMsg = 'Loading holidays...';
-      try { await loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year); }
+      try { await loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year, storeState.meta.startDate || 1); }
       finally { isLoading = false; }
     } else {
       templateUploaded = true;
@@ -256,7 +257,7 @@
         </div>
       </div>
     {:else if activeTab === 'holidays'}
-      <HolidayManager onRefresh={() => loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year)} />
+      <HolidayManager onRefresh={() => loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year, storeState.meta.startDate || 1)} />
     {:else if activeTab === 'assets'}
       <AssetUpload />
     {:else if activeTab === 'preview'}

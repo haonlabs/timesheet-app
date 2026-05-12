@@ -62,20 +62,23 @@ export function generateDaysForMonth(
   month: number,
   year: number,
   holidays: Holiday[],
-  existingEntries: DayEntry[] = []
+  existingEntries: DayEntry[] = [],
+  startDate: number = 1
 ): DayEntry[] {
-  const daysInMonth = new Date(year, month, 0).getDate();
   const entries: DayEntry[] = [];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const startDay = Math.max(1, Math.min(daysInMonth, startDate));
+  const startDateObj = new Date(year, month - 1, startDay);
 
-  for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(year, month - 1, day);
+  for (let i = 0; i < daysInMonth; i++) {
+    const date = new Date(startDateObj);
+    date.setDate(startDateObj.getDate() + i);
     const dateStr = formatDate(date);
     const existing = existingEntries.find(e => e.date === dateStr);
     const holiday = holidays.find(h => h.date === dateStr);
     const weekend = isWeekend(date);
 
     if (existing) {
-      // Preserve existing entry, just update holiday metadata
       entries.push({
         ...existing,
         isHoliday: weekend || !!holiday,

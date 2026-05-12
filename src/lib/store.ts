@@ -73,10 +73,10 @@ function createTimesheetStore() {
       update(s => ({ ...s, meta: { ...s.meta, ...meta } }));
     },
 
-    setMonthYear(month: number, year: number) {
+    setMonthYear(month: number, year: number, startDate: number = 1) {
       update(s => {
-        const newEntries = generateDaysForMonth(month, year, s.meta.holidays, s.entries);
-        return { ...s, meta: { ...s.meta, month, year }, entries: newEntries };
+        const newEntries = generateDaysForMonth(month, year, s.meta.holidays, s.entries, startDate);
+        return { ...s, meta: { ...s.meta, month, year, startDate }, entries: newEntries };
       });
     },
 

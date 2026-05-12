@@ -23,6 +23,7 @@ export interface DayEntry {
 export interface TimesheetMeta {
   month: number; // 1-12
   year: number;
+  startDate?: number; // 1-31, day of month to start (defaults to 1)
   employeeName: string;
   projectName: string;
   clientName: string;
