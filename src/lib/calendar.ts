@@ -79,12 +79,16 @@ export function generateDaysForMonth(
     const weekend = isWeekend(date);
 
     if (existing) {
-      entries.push({
+      const updatedEntry = {
         ...existing,
         isHoliday: weekend || !!holiday,
         holidayName: holiday?.name || (weekend ? getDayName(date) : undefined),
         holidayType: holiday?.type || (weekend ? 'weekend' : undefined),
-      });
+      };
+      if (!existing.overtimeOnHoliday && (weekend || !!holiday)) {
+        updatedEntry.activity = holiday?.name || (weekend ? getDayName(date) : existing.activity);
+      }
+      entries.push(updatedEntry);
     } else {
       const isOff = weekend || !!holiday;
       const workStart = isOff ? '' : '08:00';
