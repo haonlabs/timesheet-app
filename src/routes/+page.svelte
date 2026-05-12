@@ -19,7 +19,6 @@
   let toastMsg = $state('');
   let toastType = $state('ok');
   let toastVisible = $state(false);
-  let templateUploaded = $state(false);
   let showThemePicker = $state(false);
   let activeTheme = $state<ThemeId>('light');
   themeStore.subscribe(v => activeTheme = v);
@@ -109,7 +108,6 @@
     if (!confirm('Clear all saved data? This cannot be undone.')) return;
     timesheetStore.reset();
     themeStore.reset();
-    templateUploaded = false;
     showToast('Data cleared.');
   }
 
@@ -119,7 +117,6 @@
     try {
       timesheetStore.setMeta({ month: m, year: y, startDate: sd });
       await loadHolidaysAndGenerate(m, y, sd);
-      templateUploaded = true;
       showToast('Ready! Fill in your timesheet.');
     } finally { isLoading = false; }
   }
@@ -130,8 +127,6 @@
       isLoading = true; loadingMsg = 'Loading holidays...';
       try { await loadHolidaysAndGenerate(storeState.meta.month, storeState.meta.year, storeState.meta.startDate || 1); }
       finally { isLoading = false; }
-    } else {
-      templateUploaded = true;
     }
   });
 </script>
@@ -190,9 +185,6 @@
         <span>OT: <b style="color:var(--c-warn);">{$totalOTHours}</b></span>
       </div>
       <div class="flex gap-2 ml-2">
-        <button onclick={handleExportExcel}
-          class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
-          style="background:var(--c-success);color:#000;">⬇ Excel</button>
         <button onclick={handleExportPDF}
           class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
           style="background:var(--c-danger);color:white;">🖨 PDF</button>
@@ -227,29 +219,6 @@
     {#if activeTab === 'editor'}
       <div class="flex gap-6">
         <div class="w-80 flex-shrink-0 space-y-4">
-          {#if !templateUploaded}
-            <div class="rounded-xl p-4" style="background:var(--c-surface);border:1px solid var(--c-border);">
-              <h2 class="font-semibold text-sm mb-3" style="color:var(--c-accent);">📂 Import Template</h2>
-              <UploadZone accept=".xlsx,.xls" label="Drop .xlsx template here" onUpload={handleTemplateUpload} />
-              <div class="my-3 flex items-center gap-2">
-                <div class="flex-1 h-px" style="background:var(--c-border);"></div>
-                <span class="text-xs" style="color:var(--c-muted);">or</span>
-                <div class="flex-1 h-px" style="background:var(--c-border);"></div>
-              </div>
-              <button onclick={startFresh} class="w-full py-2 rounded-lg text-sm font-medium"
-                style="background:var(--c-surface2);border:1px solid var(--c-border);">
-                Start from scratch
-              </button>
-            </div>
-          {:else}
-            <div class="rounded-xl p-3 flex items-center gap-3" style="background:#0d2b1a;border:1px solid #1a4a2a;">
-              <span>✅</span>
-              <div>
-                <p class="text-sm font-medium" style="color:var(--c-success);">Template loaded</p>
-                <button onclick={() => templateUploaded = false} class="text-xs" style="color:var(--c-muted);">Change</button>
-              </div>
-            </div>
-          {/if}
           <MetaForm {onMonthYearChange} />
         </div>
         <div class="flex-1 min-w-0">
