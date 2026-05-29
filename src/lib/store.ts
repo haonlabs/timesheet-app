@@ -127,15 +127,25 @@ function regenerateWithHolidays(entries: DayEntry[], holidays: Holiday[]): DayEn
   return entries.map(entry => {
     const h = holidays.find(h => h.date === entry.date);
     if (h) {
+      const hasHolidayTimeEntry = Boolean(entry.isHoliday && (
+        entry.workStart ||
+        entry.workEnd ||
+        entry.otStart ||
+        entry.otEnd ||
+        entry.totalHour ||
+        (entry.totalOT && entry.totalOT !== '0:00')
+      ));
+      const overtimeOnHoliday = Boolean(entry.overtimeOnHoliday || hasHolidayTimeEntry);
       return {
         ...entry,
         isHoliday: true,
         holidayName: h.name,
         holidayType: h.type,
-        activity: entry.overtimeOnHoliday ? entry.activity : (entry.activity || h.name),
+        overtimeOnHoliday,
+        activity: overtimeOnHoliday ? entry.activity : (entry.activity || h.name),
       };
     }
-    return { ...entry, isHoliday: false, holidayName: undefined, holidayType: undefined };
+    return { ...entry, isHoliday: false, holidayName: undefined, holidayType: undefined, overtimeOnHoliday: false };
   });
 }
 

@@ -72,7 +72,6 @@
       const sd = result.meta.startDate || 1;
       timesheetStore.setMeta({ month: m, year: y, startDate: sd });
       await loadHolidaysAndGenerate(m, y, sd, result.entries.length > 0 ? result.entries : undefined);
-      templateUploaded = true;
       showToast('Template imported!');
     } catch(e) { showToast('Failed to parse template', 'err'); console.error(e); }
     finally { isLoading = false; }
