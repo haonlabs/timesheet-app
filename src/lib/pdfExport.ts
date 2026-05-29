@@ -125,16 +125,18 @@ function buildPrintHTML(state: TimesheetState): string {
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Sora',Arial,sans-serif;background:white;color:#000;font-size:9pt;}
-    @page{size:A4 landscape;margin:8mm 8mm;}
+    html{background:#f3f4f6;}
+    body{font-family:'Sora',Arial,sans-serif;background:white;color:#000;font-size:8pt;width:210mm;min-height:297mm;margin:0 auto;}
+    @page{size:210mm 297mm;margin:6mm;}
     @media print{
-      body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
+      html{background:white;}
+      body{width:auto;min-height:auto;margin:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
     }
     .wrap{width:100%;}
     table{border-collapse:collapse;}
     .main-table{width:100%;}
-    .main-table th{background:#1e3a5f;color:white;padding:4px 5px;font-size:8pt;border:1px solid #1e3a5f;text-align:center;}
-    .main-table th.left{text-align:left;padding-left:8px;}
+    .main-table th{background:#1e3a5f;color:white;padding:3px 3px;font-size:7pt;border:1px solid #1e3a5f;text-align:center;}
+    .main-table th.left{text-align:left;padding-left:5px;}
   </style>
 </head>
 <body>
