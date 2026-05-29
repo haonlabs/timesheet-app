@@ -84,8 +84,11 @@
     timesheetStore.updateEntry(date, patch);
   }
 
-  function primeTimePicker(input: HTMLInputElement) {
-    if (!input.value) input.value = '06:00';
+  function primeTimePicker(date: string, field: keyof DayEntry, input: HTMLInputElement) {
+    if (!input.value) {
+      input.value = '06:00';
+      update(date, field, input.value);
+    }
   }
 
   // Holiday rows CAN be edited (lembur), just visually different
@@ -194,9 +197,9 @@
             <!-- Work Start -->
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
-                <input type="time" value={entry.workStart || ''}
+                  <input type="time" value={entry.workStart || ''}
                   min="06:00"
-                  onfocus={e => primeTimePicker(e.currentTarget)}
+                  onfocus={e => primeTimePicker(entry.date, 'workStart', e.currentTarget)}
                   oninput={e => update(entry.date, 'workStart', e.currentTarget.value)}
                   onchange={e => update(entry.date, 'workStart', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
@@ -209,9 +212,9 @@
             <!-- Work End -->
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
-                <input type="time" value={entry.workEnd || ''}
+                  <input type="time" value={entry.workEnd || ''}
                   min="06:00"
-                  onfocus={e => primeTimePicker(e.currentTarget)}
+                  onfocus={e => primeTimePicker(entry.date, 'workEnd', e.currentTarget)}
                   oninput={e => update(entry.date, 'workEnd', e.currentTarget.value)}
                   onchange={e => update(entry.date, 'workEnd', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
@@ -224,9 +227,9 @@
             <!-- OT Start -->
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
-                <input type="time" value={entry.otStart || ''}
+                  <input type="time" value={entry.otStart || ''}
                   min="06:00"
-                  onfocus={e => primeTimePicker(e.currentTarget)}
+                  onfocus={e => primeTimePicker(entry.date, 'otStart', e.currentTarget)}
                   oninput={e => update(entry.date, 'otStart', e.currentTarget.value)}
                   onchange={e => update(entry.date, 'otStart', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
@@ -239,9 +242,9 @@
             <!-- OT End -->
             <td class="border px-1 py-1 text-center align-top" style="border-color:var(--c-border);">
               {#if !printMode}
-                <input type="time" value={entry.otEnd || ''}
+                  <input type="time" value={entry.otEnd || ''}
                   min="06:00"
-                  onfocus={e => primeTimePicker(e.currentTarget)}
+                  onfocus={e => primeTimePicker(entry.date, 'otEnd', e.currentTarget)}
                   oninput={e => update(entry.date, 'otEnd', e.currentTarget.value)}
                   onchange={e => update(entry.date, 'otEnd', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
