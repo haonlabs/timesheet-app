@@ -51,8 +51,9 @@ export function calcHours(start: string, end: string): string {
   if (!start || !end) return '0:00';
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
-  const diff = (eh * 60 + em) - (sh * 60 + sm);
-  if (diff <= 0) return '0:00';
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) diff += 24 * 60;
+  if (diff === 0) return '0:00';
   const h = Math.floor(diff / 60);
   const m = diff % 60;
   return `${h}:${String(m).padStart(2, '0')}`;
@@ -79,13 +80,24 @@ export function generateDaysForMonth(
     const weekend = isWeekend(date);
 
     if (existing) {
+      const hasTimeEntry = Boolean(
+        existing.workStart ||
+        existing.workEnd ||
+        existing.otStart ||
+        existing.otEnd ||
+        existing.totalHour ||
+        (existing.totalOT && existing.totalOT !== '0:00')
+      );
+      const overtimeOnHoliday = (weekend || !!holiday)
+        && Boolean(existing.overtimeOnHoliday || (existing.isHoliday && hasTimeEntry));
       const updatedEntry = {
         ...existing,
         isHoliday: weekend || !!holiday,
         holidayName: holiday?.name || (weekend ? getDayName(date) : undefined),
         holidayType: holiday?.type || (weekend ? 'weekend' : undefined),
+        overtimeOnHoliday,
       };
-      if (!existing.overtimeOnHoliday && (weekend || !!holiday)) {
+      if (!overtimeOnHoliday && (weekend || !!holiday)) {
         updatedEntry.activity = holiday?.name || (weekend ? getDayName(date) : existing.activity);
       }
       entries.push(updatedEntry);

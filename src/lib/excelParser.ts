@@ -71,6 +71,7 @@ export async function parseTimesheetExcel(buffer: ArrayBuffer): Promise<ParseRes
     const otStart = toTimeStr(otStartVal);
     const otEnd = toTimeStr(otEndVal);
     const activity = String(activityVal || '').trim();
+    const hasTimeEntry = Boolean(workStart || workEnd || otStart || otEnd);
 
     // Detect holiday from activity text
     const isHoliday = weekend
@@ -85,17 +86,18 @@ export async function parseTimesheetExcel(buffer: ArrayBuffer): Promise<ParseRes
 
     entries.push({
       date: dateStr,
-      workStart: isHoliday ? '' : workStart,
-      workEnd: isHoliday ? '' : workEnd,
-      otStart: isHoliday ? '' : otStart,
-      otEnd: isHoliday ? '' : otEnd,
-      totalHour: isHoliday ? '' : computeHours(workStart, workEnd),
-      totalOT: isHoliday ? '' : (otStart && otEnd ? computeHours(otStart, otEnd) : '0:00'),
+      workStart: isHoliday && !hasTimeEntry ? '' : workStart,
+      workEnd: isHoliday && !hasTimeEntry ? '' : workEnd,
+      otStart: isHoliday && !hasTimeEntry ? '' : otStart,
+      otEnd: isHoliday && !hasTimeEntry ? '' : otEnd,
+      totalHour: workStart && workEnd ? computeHours(workStart, workEnd) : '',
+      totalOT: otStart && otEnd ? computeHours(otStart, otEnd) : '0:00',
       activity,
       isHoliday,
       holidayName: isHoliday ? activity || getDayName(date) : undefined,
       holidayType: holidayType || (weekend ? 'weekend' : undefined),
       workType: activity.startsWith('WFH') ? 'WFH' : activity.startsWith('WFO') ? 'WFO' : '',
+      overtimeOnHoliday: isHoliday && hasTimeEntry,
     });
 
     if (month === new Date().getMonth() + 1) {
@@ -182,7 +184,8 @@ function computeHours(start: string, end: string): string {
   if (!start || !end) return '';
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
-  const diff = (eh * 60 + em) - (sh * 60 + sm);
-  if (diff <= 0) return '';
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) diff += 24 * 60;
+  if (diff === 0) return '';
   return `${Math.floor(diff / 60)}:${String(diff % 60).padStart(2, '0')}`;
 }

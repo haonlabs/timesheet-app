@@ -67,15 +67,19 @@
     const entry = s.entries.find(e => e.date === date);
     if (!entry) return;
     const patch: Partial<DayEntry> = { [field]: value };
+    const nextWorkStart = field === 'workStart' ? value : entry.workStart || '';
+    const nextWorkEnd = field === 'workEnd' ? value : entry.workEnd || '';
+    const nextOtStart = field === 'otStart' ? value : entry.otStart || '';
+    const nextOtEnd = field === 'otEnd' ? value : entry.otEnd || '';
+
     if (field === 'workStart' || field === 'workEnd') {
-      const start = field === 'workStart' ? value : entry.workStart || '';
-      const end   = field === 'workEnd'   ? value : entry.workEnd   || '';
-      patch.totalHour = (start && end) ? calcHours(start, end) : '';
+      patch.totalHour = (nextWorkStart && nextWorkEnd) ? calcHours(nextWorkStart, nextWorkEnd) : '';
     }
     if (field === 'otStart' || field === 'otEnd') {
-      const start = field === 'otStart' ? value : entry.otStart || '';
-      const end   = field === 'otEnd'   ? value : entry.otEnd   || '';
-      patch.totalOT = (start && end) ? calcHours(start, end) : '0:00';
+      patch.totalOT = (nextOtStart && nextOtEnd) ? calcHours(nextOtStart, nextOtEnd) : '0:00';
+    }
+    if (entry.isHoliday && ['workStart', 'workEnd', 'otStart', 'otEnd'].includes(field)) {
+      patch.overtimeOnHoliday = Boolean(nextWorkStart || nextWorkEnd || nextOtStart || nextOtEnd);
     }
     timesheetStore.updateEntry(date, patch);
   }
@@ -194,6 +198,7 @@
                   min="06:00"
                   onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'workStart', e.currentTarget.value)}
+                  onchange={e => update(entry.date, 'workStart', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
               {:else}
@@ -208,6 +213,7 @@
                   min="06:00"
                   onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'workEnd', e.currentTarget.value)}
+                  onchange={e => update(entry.date, 'workEnd', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
               {:else}
@@ -222,6 +228,7 @@
                   min="06:00"
                   onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'otStart', e.currentTarget.value)}
+                  onchange={e => update(entry.date, 'otStart', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
               {:else}
@@ -236,6 +243,7 @@
                   min="06:00"
                   onfocus={e => primeTimePicker(e.currentTarget)}
                   oninput={e => update(entry.date, 'otEnd', e.currentTarget.value)}
+                  onchange={e => update(entry.date, 'otEnd', e.currentTarget.value)}
                   class="w-full text-center text-xs bg-transparent border-0 outline-none"
                   style="color:var(--c-text);font-family:var(--font-mono);min-width:0;" />
               {:else}

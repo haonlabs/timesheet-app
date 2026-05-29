@@ -38,6 +38,12 @@ function setDurationCell(cell: ExcelJS.Cell, hours: string | undefined) {
   cell.numFmt = '[h]:mm';
 }
 
+function setTimeCell(cell: ExcelJS.Cell, time: string | undefined) {
+  const value = timeStrToDate(time || '');
+  cell.value = value;
+  if (value) cell.numFmt = 'h:mm';
+}
+
 export async function exportToExcel(state: TimesheetState): Promise<Blob> {
   const { meta, entries, templateBuffer } = state;
 
@@ -96,28 +102,11 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
       row.getCell(9).value = null; // I = OT end
       // K and L have formulas, leave them
       row.getCell(13).value = entry.activity || entry.holidayName || ''; // M = activity
-    } else if (entry.workStart && entry.workEnd) {
-      // Work day: set times
-      const startTime = timeStrToDate(entry.workStart);
-      const endTime = timeStrToDate(entry.workEnd);
-      if (startTime) {
-        row.getCell(4).value = startTime; // D = work start
-        row.getCell(4).numFmt = 'h:mm';
-      }
-      if (endTime) {
-        row.getCell(6).value = endTime; // F = work end
-        row.getCell(6).numFmt = 'h:mm';
-      }
-
-      // OT
-      if (entry.otStart) {
-        const otStart = timeStrToDate(entry.otStart);
-        if (otStart) { row.getCell(7).value = otStart; row.getCell(7).numFmt = 'h:mm'; }
-      }
-      if (entry.otEnd) {
-        const otEnd = timeStrToDate(entry.otEnd);
-        if (otEnd) { row.getCell(9).value = otEnd; row.getCell(9).numFmt = 'h:mm'; }
-      }
+    } else {
+      setTimeCell(row.getCell(4), entry.workStart); // D = work start
+      setTimeCell(row.getCell(6), entry.workEnd);   // F = work end
+      setTimeCell(row.getCell(7), entry.otStart);   // G = OT start
+      setTimeCell(row.getCell(9), entry.otEnd);     // I = OT end
 
       // Activity in M (col 13) — keep formula in K and L
       row.getCell(13).value = entry.activity || '';
@@ -129,18 +118,20 @@ export async function exportToExcel(state: TimesheetState): Promise<Blob> {
       if (!hasFormula(kVal)) {
         // No formula, write computed value
         if (entry.totalHour) {
-          const [h, m] = entry.totalHour.split(':').map(Number);
-          kCell.value = ((h || 0) * 60 + (m || 0)) / (24 * 60);
+          kCell.value = hoursToExcelSerial(entry.totalHour);
           kCell.numFmt = '[h]:mm';
+        } else {
+          kCell.value = null;
         }
       }
       const lVal = lCell.value;
       if (!hasFormula(lVal)) {
         if (entry.totalOT && entry.totalOT !== '0:00') {
-          const [h, m] = entry.totalOT.split(':').map(Number);
-          lCell.value = ((h || 0) * 60 + (m || 0)) / (24 * 60);
-          lCell.numFmt = '[h]:mm';
+          lCell.value = hoursToExcelSerial(entry.totalOT);
+        } else {
+          lCell.value = 0;
         }
+        lCell.numFmt = '[h]:mm';
       }
     }
 
@@ -232,24 +223,25 @@ async function buildFromScratch(state: TimesheetState): Promise<Blob> {
   entries.forEach((entry, idx) => {
     const row = ws.getRow(8 + idx);
     const isHoliday = entry.isHoliday;
+    const canWriteTimes = !isHoliday || entry.overtimeOnHoliday;
 
     const [y, m, d] = entry.date.split('-').map(Number);
     row.getCell(1).value = new Date(y, m - 1, d, 12, 0, 0);
     row.getCell(1).numFmt = 'dddd, dd-mm-yyyy';
 
-    if (!isHoliday && entry.workStart) {
+    if (canWriteTimes && entry.workStart) {
       const s = timeStrToDate(entry.workStart);
       const e = timeStrToDate(entry.workEnd || '');
       if (s) { row.getCell(2).value = s; row.getCell(2).numFmt = 'h:mm'; }
       if (e) { row.getCell(3).value = e; row.getCell(3).numFmt = 'h:mm'; }
     }
-    if (!isHoliday && entry.otStart) {
+    if (canWriteTimes && entry.otStart) {
       const os = timeStrToDate(entry.otStart);
       const oe = timeStrToDate(entry.otEnd || '');
       if (os) { row.getCell(4).value = os; row.getCell(4).numFmt = 'h:mm'; }
       if (oe) { row.getCell(5).value = oe; row.getCell(5).numFmt = 'h:mm'; }
     }
-    if (entry.totalHour && !isHoliday) {
+    if (canWriteTimes && entry.totalHour) {
       const [h, m] = entry.totalHour.split(':').map(Number);
       row.getCell(6).value = ((h || 0) * 60 + (m || 0)) / (24 * 60);
       row.getCell(6).numFmt = '[h]:mm';
