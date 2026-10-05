@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    absenceCounts,
     attendanceDaysPercentage,
     attendanceHoursPercentage,
     standardWorkDaysCount,
@@ -10,40 +11,17 @@
     totalWorkHours,
     workDaysCount,
   } from '$lib/store';
-  import { calcHours, formatDisplayDate, getDayName, parseDate } from '$lib/calendar';
+  import { calcHours, formatDisplayDate, getMonthName } from '$lib/calendar';
   import { refactorActivity } from '$lib/aiRefactor';
-  import type { DayEntry, TimesheetState } from '$lib/types';
+  import { ABSENCE_TYPES, isAbsence } from '$lib/summary';
+  import type { DayEntry } from '$lib/types';
 
   let { printMode = false } = $props<{ printMode?: boolean }>();
 
-  let s = $state<TimesheetState>(buildDefault());
-  timesheetStore.subscribe(v => s = v as any);
+  const s = $derived($timesheetStore);
 
   let polishing = $state<Record<string, boolean>>({});
 
-  function buildDefault(): TimesheetState {
-    return {
-      meta: {
-        month:1,
-        year:2026,
-        employeeName:'',
-        projectName:'',
-        clientName:'',
-        holidays:[],
-        logo:'',
-        signatures:{},
-        supervisorName:'',
-        supervisor2Name:'',
-        geminiApiKey:'',
-        totalAbsent: 0,
-        totalSick: 0,
-        totalLeave: 0,
-        standardWorkHours: '168:00',
-      },
-      entries: [],
-      templateParsed: false,
-    };
-  }
 
   async function aiPolish(date: string, text: string) {
     if (!s.meta.geminiApiKey) {
@@ -84,6 +62,33 @@
     timesheetStore.updateEntry(date, patch);
   }
 
+  function setWorkType(entry: DayEntry, workType: DayEntry['workType']) {
+    const patch: Partial<DayEntry> = { workType };
+    if (isAbsence({ ...entry, workType })) {
+      Object.assign(patch, { workStart: '', workEnd: '', otStart: '', otEnd: '', totalHour: '', totalOT: '0:00' });
+      if (!entry.activity?.trim() || ABSENCE_TYPES.some(t => t === entry.activity)) patch.activity = workType;
+    }
+    timesheetStore.updateEntry(entry.date, patch);
+  }
+
+  function applyHoursToWorkdays() {
+    const src = s.entries.find(e => !e.isHoliday && !isAbsence(e) && e.workStart && e.workEnd);
+    if (!src) { alert('Isi jam kerja di salah satu hari kerja dulu.'); return; }
+    if (!confirm(`Terapkan ${src.workStart}–${src.workEnd} ke semua hari kerja (selain Ijin/Sakit/Cuti)?`)) return;
+    timesheetStore.setEntries(s.entries.map(e => e.isHoliday || isAbsence(e)
+      ? e
+      : { ...e, workStart: src.workStart, workEnd: src.workEnd, totalHour: src.totalHour }));
+  }
+
+  // Nearest earlier working day that has an activity.
+  function previousActivity(index: number): string {
+    for (let i = index - 1; i >= 0; i--) {
+      const e = s.entries[i];
+      if (!e.isHoliday && !isAbsence(e) && e.activity?.trim()) return e.activity;
+    }
+    return '';
+  }
+
   function primeTimePicker(date: string, field: keyof DayEntry, input: HTMLInputElement) {
     if (!input.value) {
       input.value = '06:00';
@@ -99,6 +104,7 @@
     if (e.holidayType === 'public')     return 'background:var(--c-holiday);border-left:3px solid var(--c-danger);';
     if (e.holidayType === 'collective') return 'background:var(--c-collective);border-left:3px solid var(--c-accent2);';
     if (e.holidayType === 'manual')     return 'background:var(--c-manual);border-left:3px solid var(--c-success);';
+    if (isAbsence(e))                   return 'background:var(--c-weekend);border-left:3px solid var(--c-warn);';
     if (e.workType === 'WFH')           return 'background:var(--c-wfh);';
     if (e.workType === 'WFO')           return 'background:var(--c-wfo);';
     return '';
@@ -122,11 +128,17 @@
     if (e.holidayType === 'manual')     return 'color:var(--c-success);';
     return 'color:var(--c-muted);';
   }
-
-  const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 </script>
 
 <div class="fade-in">
+  {#if !printMode}
+    <div class="flex justify-end mb-2">
+      <button onclick={applyHoursToWorkdays}
+        class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
+        style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-muted);"
+        title="Salin jam kerja dari hari kerja pertama yang terisi ke semua hari kerja">⏱ Terapkan jam ke semua hari kerja</button>
+    </div>
+  {/if}
   <!-- Header bar -->
   <div class="rounded-t-xl p-4 flex items-start justify-between"
     style="background:var(--c-surface);border:1px solid var(--c-border);border-bottom:none;">
@@ -154,7 +166,7 @@
       <p class="text-xs" style="color:var(--c-muted);">Client / Location</p>
       <p class="font-semibold">{s.meta.clientName || '—'}</p>
       <p class="text-xs mt-1" style="color:var(--c-muted);">Period</p>
-      <p class="text-sm font-medium">{months[s.meta.month - 1]} {s.meta.year}</p>
+      <p class="text-sm font-medium">{getMonthName(s.meta.month)} {s.meta.year}</p>
     </div>
   </div>
 
@@ -184,13 +196,27 @@
         </tr>
       </thead>
       <tbody>
-        {#each s.entries as entry (entry.date)}
+        {#each s.entries as entry, i (entry.date)}
+          {@const prevActivity = previousActivity(i)}
           <tr style="{rowStyle(entry)} transition:background 0.15s;">
             <!-- Date -->
             <td class="border px-2 py-1.5 text-xs font-mono whitespace-nowrap align-top" style="border-color:var(--c-border);">
               <div>{formatDisplayDate(entry.date)}</div>
               {#if entry.holidayName}
                 <div class="text-xs font-sans mt-0.5" style="{labelColor(entry)}font-size:10px;line-height:1.2;">{entry.holidayName}</div>
+              {/if}
+              {#if !printMode && !entry.isHoliday}
+                <!-- Only absences are picked here; "—" puts the day back to the default WFH. -->
+                <select value={isAbsence(entry) ? entry.workType : ''}
+                  onchange={e => setWorkType(entry, (e.currentTarget.value || 'WFH') as DayEntry['workType'])}
+                  class="mt-0.5 text-[10px] font-sans bg-transparent border-0 outline-none cursor-pointer"
+                  style="color:{isAbsence(entry) ? 'var(--c-warn)' : 'var(--c-muted)'};"
+                  title="Status hari ini">
+                  <option value="">—</option>
+                  {#each ABSENCE_TYPES as t}
+                    <option value={t}>{t}</option>
+                  {/each}
+                </select>
               {/if}
             </td>
 
@@ -297,6 +323,14 @@
                       </button>
                     {/if}
                     
+                    {#if prevActivity && prevActivity !== entry.activity}
+                      <button
+                        onclick={() => update(entry.date, 'activity', prevActivity)}
+                        class="p-1 rounded hover:bg-white/10"
+                        title="Salin aktivitas hari sebelumnya: {prevActivity}"
+                      >⤵</button>
+                    {/if}
+
                     {#if s.entries.some(e => e.activity && e.activity.trim().length > 0 && e.activity !== entry.activity)}
                       <div class="relative group/hist">
                         <button class="p-1 rounded hover:bg-white/10" title="Recent Activities">📋</button>
@@ -337,12 +371,6 @@
     </table>
   </div>
 
-  <datalist id="activity-suggestions">
-    {#each [...new Set(s.entries.map(e => e.activity).filter(a => a && a.trim().length > 0))] as activity}
-      <option value={activity}></option>
-    {/each}
-  </datalist>
-
   <!-- Summary + Signature -->
   <div class="mt-4 grid grid-cols-2 gap-4">
     <!-- Attendance summary -->
@@ -351,9 +379,9 @@
       <table class="w-full text-xs"><tbody>
         {#each [
           ['a. Jumlah hari kerja satu bulan', $standardWorkDaysCount],
-          ['b. Jumlah hari pegawai Ijin', s.meta.totalAbsent ?? 0],
-          ['c. Jumlah hari pegawai sakit', s.meta.totalSick ?? 0],
-          ['d. Jumlah hari pegawai Cuti', s.meta.totalLeave ?? 0],
+          ['b. Jumlah hari pegawai Ijin', $absenceCounts.absent],
+          ['c. Jumlah hari pegawai sakit', $absenceCounts.sick],
+          ['d. Jumlah hari pegawai Cuti', $absenceCounts.leave],
           ['e. Jumlah kehadiran pegawai', $workDaysCount],
           ['f. Persentase Kehadiran', $attendanceDaysPercentage],
         ] as [lbl, val]}

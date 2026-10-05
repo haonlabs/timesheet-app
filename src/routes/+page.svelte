@@ -1,17 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { timesheetStore, totalWorkHours, totalOTHours, workDaysCount, themeStore, themes } from '$lib/store';
-  import type { ThemeId } from '$lib/store';
-  import { fetchIndonesianHolidays, generateDaysForMonth, mergeHolidays, getMonthName } from '$lib/calendar';
-  import { parseTimesheetExcel } from '$lib/excelParser';
-  import { exportToExcel } from '$lib/excelExporter';
+  import { fetchIndonesianHolidays, formatDate, generateDaysForMonth, mergeHolidays } from '$lib/calendar';
   import { exportToPDF } from '$lib/pdfExport';
   import TimesheetTable from './TimesheetTable.svelte';
-  import UploadZone from './UploadZone.svelte';
   import MetaForm from './MetaForm.svelte';
   import HolidayManager from './HolidayManager.svelte';
   import AssetUpload from './AssetUpload.svelte';
-  import type { DayEntry, TimesheetState } from '$lib/types';
+  import type { TimesheetState } from '$lib/types';
 
   let activeTab = $state('editor');
   let isLoading = $state(false);
@@ -20,61 +16,26 @@
   let toastType = $state('ok');
   let toastVisible = $state(false);
   let showThemePicker = $state(false);
-  let activeTheme = $state<ThemeId>('light');
-  themeStore.subscribe(v => activeTheme = v);
-  let storeState = $state<TimesheetState>({
-    meta: {
-      month: new Date().getMonth()+1,
-      year: new Date().getFullYear(),
-      employeeName: '',
-      projectName: '',
-      clientName: '',
-      holidays: [],
-      logo: '',
-      signatures: {},
-      totalAbsent: 0,
-      totalSick: 0,
-      totalLeave: 0,
-      standardWorkHours: '168:00',
-    },
-    entries: [],
-    templateParsed: false,
-  });
-
-  timesheetStore.subscribe(v => storeState = v);
+  const activeTheme = $derived($themeStore);
+  const storeState = $derived($timesheetStore);
 
   function showToast(msg: string, type = 'ok') {
     toastMsg = msg; toastType = type; toastVisible = true;
     setTimeout(() => toastVisible = false, 3500);
   }
 
-  async function loadHolidaysAndGenerate(month: number, year: number, startDate: number, preEntries?: DayEntry[]) {
+  async function loadHolidaysAndGenerate(month: number, year: number, startDate: number) {
     loadingMsg = 'Fetching Indonesian holidays...';
     try {
-      const apiHolidays = await fetchIndonesianHolidays(year);
+      // A December period starting after the 1st runs into January of next year.
+      const years = month === 12 && startDate > 1 ? [year, year + 1] : [year];
+      const apiHolidays = (await Promise.all(years.map(y => fetchIndonesianHolidays(y)))).flat();
       const manualHolidays = storeState.meta.holidays.filter(h => h.type === 'manual');
       const merged = mergeHolidays(apiHolidays, manualHolidays);
       timesheetStore.setHolidays(merged);
-      const entries = generateDaysForMonth(month, year, merged, preEntries || storeState.entries, startDate);
+      const entries = generateDaysForMonth(month, year, merged, Object.values(storeState.archive ?? {}), startDate);
       timesheetStore.setEntries(entries);
     } catch(e) { console.error(e); }
-  }
-
-  async function handleTemplateUpload(file: File) {
-    isLoading = true; loadingMsg = 'Parsing template...';
-    try {
-      const buf = await file.arrayBuffer();
-      const result = await parseTimesheetExcel(buf);
-      timesheetStore.setTemplate(buf);
-      if (result.meta.employeeName) timesheetStore.setMeta(result.meta);
-      const m = result.meta.month || new Date().getMonth()+1;
-      const y = result.meta.year || new Date().getFullYear();
-      const sd = result.meta.startDate || 1;
-      timesheetStore.setMeta({ month: m, year: y, startDate: sd });
-      await loadHolidaysAndGenerate(m, y, sd, result.entries.length > 0 ? result.entries : undefined);
-      showToast('Template imported!');
-    } catch(e) { showToast('Failed to parse template', 'err'); console.error(e); }
-    finally { isLoading = false; }
   }
 
   async function onMonthYearChange(month: number, year: number, startDate: number) {
@@ -85,30 +46,17 @@
     } finally { isLoading = false; }
   }
 
-  async function handleExportExcel() {
-    isLoading = true; loadingMsg = 'Generating Excel...';
-    try {
-      const blob = await exportToExcel(storeState);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Timesheet_${storeState.meta.employeeName || 'Export'}_${getMonthName(storeState.meta.month)}_${storeState.meta.year}.xlsx`;
-      a.click(); URL.revokeObjectURL(url);
-      showToast('Excel exported!');
-    } catch(e) { showToast('Export failed', 'err'); }
-    finally { isLoading = false; }
-  }
-
   function handleExportPDF() {
     exportToPDF(storeState);
   }
 
   function exportBackup() {
-    const { templateBuffer: _, ...data } = storeState;
+    // The API key is a secret of this browser; keep it out of a file that gets copied around.
+    const data = { ...storeState, meta: { ...storeState.meta, geminiApiKey: undefined } };
     const blob = new Blob([JSON.stringify({ app: 'timesheet', version: 1, theme: activeTheme, data })], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Timesheet_Backup_${storeState.meta.employeeName || 'Data'}_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `Timesheet_Backup_${storeState.meta.employeeName || 'Data'}_${formatDate(new Date())}.json`;
     a.click(); URL.revokeObjectURL(a.href);
     showToast('Backup exported!');
   }
@@ -123,7 +71,8 @@
       const data = json?.data as TimesheetState | undefined;
       if (json?.app !== 'timesheet' || !data?.meta || !Array.isArray(data.entries)) throw new Error('invalid backup');
       if (!confirm('Replace current data with this backup?')) return;
-      timesheetStore.set(data);
+      const geminiApiKey = storeState.meta.geminiApiKey || data.meta.geminiApiKey;
+      timesheetStore.set({ ...data, meta: { ...data.meta, geminiApiKey } });
       if (themes.some(t => t.id === json.theme)) themeStore.set(json.theme);
       showToast('Backup imported!');
     } catch(err) { showToast('Invalid backup file', 'err'); console.error(err); }
@@ -134,16 +83,6 @@
     timesheetStore.reset();
     themeStore.reset();
     showToast('Data cleared.');
-  }
-
-  async function startFresh() {
-    const m = storeState.meta.month; const y = storeState.meta.year; const sd = storeState.meta.startDate || 1;
-    isLoading = true; loadingMsg = 'Setting up...';
-    try {
-      timesheetStore.setMeta({ month: m, year: y, startDate: sd });
-      await loadHolidaysAndGenerate(m, y, sd);
-      showToast('Ready! Fill in your timesheet.');
-    } finally { isLoading = false; }
   }
 
   onMount(async () => {
@@ -273,7 +212,3 @@
     {/if}
   </main>
 </div>
-
-<script context="module" lang="ts">
-  // noop
-</script>

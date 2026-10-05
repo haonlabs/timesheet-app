@@ -2,16 +2,28 @@
   import { timesheetStore } from '$lib/store';
   import UploadZone from './UploadZone.svelte';
 
-  let s = $state({ meta: { logo: '', signatures: { employee: '', supervisor1: '', supervisor2: '' } } });
-  timesheetStore.subscribe(v => s = v as any);
+  const s = $derived($timesheetStore);
+
+  // Images live in localStorage (~5MB total), so shrink them before storing.
+  const MAX_SIDE = 600;
 
   async function toBase64(file: File): Promise<string> {
-    return new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result as string);
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
+    if (file.type === 'image/svg+xml') {
+      return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+    }
+    const img = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.close();
+    return canvas.toDataURL('image/png');
   }
 
   async function uploadLogo(file: File) {
@@ -94,7 +106,7 @@
     <div class="grid grid-cols-3 gap-4 text-xs" style="color:var(--c-muted);">
       <p>Tanda tangan dan logo <strong style="color:var(--c-text);">tidak akan melebihi kotak</strong> — otomatis di-resize dengan mempertahankan rasio.</p>
       <p>Untuk tanda tangan, gunakan <strong style="color:var(--c-text);">PNG transparan</strong> agar background putih di PDF terlihat bersih.</p>
-      <p>Asset disimpan <strong style="color:var(--c-text);">hanya di sesi ini</strong>. Setelah export PDF/Excel, asset sudah ter-embed di dokumen.</p>
+      <p>Asset disimpan <strong style="color:var(--c-text);">di browser ini</strong> (otomatis diperkecil) dan ikut terbawa saat Export backup.</p>
     </div>
   </div>
 </div>

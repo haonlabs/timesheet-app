@@ -1,22 +1,26 @@
-import type { TimesheetMeta, TimesheetState } from './types';
+import type { DayEntry, TimesheetMeta, TimesheetState } from './types';
 
 export const DEFAULT_STANDARD_WORK_HOURS = '168:00';
 
-export function toNonNegativeNumber(value: unknown): number {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+export const ABSENCE_TYPES = ['Ijin', 'Sakit', 'Cuti'] as const;
+
+export function isAbsence(entry: DayEntry): boolean {
+  return (ABSENCE_TYPES as readonly string[]).includes(entry.workType ?? '');
 }
 
 export function getStandardWorkDays(state: TimesheetState): number {
   return state.entries.filter(e => !e.isHoliday).length;
 }
 
+export function getAbsenceCounts(state: TimesheetState) {
+  const count = (type: DayEntry['workType']) =>
+    state.entries.filter(e => !e.isHoliday && e.workType === type).length;
+  return { absent: count('Ijin'), sick: count('Sakit'), leave: count('Cuti') };
+}
+
 export function getAttendanceDays(state: TimesheetState): number {
-  const workDays = getStandardWorkDays(state);
-  const absent = toNonNegativeNumber(state.meta.totalAbsent);
-  const sick = toNonNegativeNumber(state.meta.totalSick);
-  const leave = toNonNegativeNumber(state.meta.totalLeave);
-  return workDays - absent - sick - leave;
+  const { absent, sick, leave } = getAbsenceCounts(state);
+  return getStandardWorkDays(state) - absent - sick - leave;
 }
 
 export function getStandardWorkHours(meta: TimesheetMeta): string {
