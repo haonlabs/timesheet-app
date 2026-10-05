@@ -1,23 +1,11 @@
 <script lang="ts">
   import { timesheetStore } from '$lib/store';
   import { fetchIndonesianHolidays, generateDaysForMonth, mergeHolidays, formatDisplayDate } from '$lib/calendar';
-  import type { Holiday, TimesheetState } from '$lib/types';
+  import type { Holiday } from '$lib/types';
 
   let { onRefresh } = $props<{ onRefresh: () => void }>();
 
-  let storeState = $state<TimesheetState>({
-    meta: {
-      month: 1,
-      year: 2026,
-      employeeName: '',
-      projectName: '',
-      clientName: '',
-      holidays: [] as Holiday[],
-    },
-    entries: [],
-    templateParsed: false,
-  });
-  timesheetStore.subscribe(v => storeState = v);
+  const storeState = $derived($timesheetStore);
 
   let newDate = $state('');
   let newName = $state('');

@@ -3,11 +3,12 @@ import { formatDisplayDate, getMonthName, parseDate, getDayName } from './calend
 import {
   addHourStrings,
   formatWholePercent,
+  getAbsenceCounts,
   getAttendanceDays,
   getStandardWorkDays,
   getStandardWorkHours,
+  isAbsence,
   parseHoursToMinutes,
-  toNonNegativeNumber,
 } from './summary';
 
 export function exportToPDF(state: TimesheetState) {
@@ -70,9 +71,7 @@ function buildPrintHTML(state: TimesheetState): string {
   }, 0);
   const totalOTStr = `${Math.floor(totalOTMin/60)}:${String(totalOTMin%60).padStart(2,'0')}`;
   const standardWorkDays = getStandardWorkDays(state);
-  const absentDays = toNonNegativeNumber(meta.totalAbsent);
-  const sickDays = toNonNegativeNumber(meta.totalSick);
-  const leaveDays = toNonNegativeNumber(meta.totalLeave);
+  const { absent: absentDays, sick: sickDays, leave: leaveDays } = getAbsenceCounts(state);
   const attendanceDays = getAttendanceDays(state);
   const attendanceDaysPct = formatWholePercent(attendanceDays, standardWorkDays);
   const standardHours = getStandardWorkHours(meta);
@@ -88,6 +87,7 @@ function buildPrintHTML(state: TimesheetState): string {
     else if (entry.holidayType === 'public')     { bg = '#fff0f0'; borderLeft = 'border-left:3px solid #dc2626;'; }
     else if (entry.holidayType === 'collective') { bg = '#f5f0ff'; borderLeft = 'border-left:3px solid #7c3aed;'; }
     else if (entry.holidayType === 'manual')     { bg = '#f0fff4'; borderLeft = 'border-left:3px solid #16a34a;'; }
+    else if (isAbsence(entry)) { bg = '#fffbeb'; borderLeft = 'border-left:3px solid #d97706;'; }
     else if (entry.workType === 'WFH') { bg = '#eff6ff'; }
     else if (entry.workType === 'WFO') { bg = '#f0fdf4'; }
 

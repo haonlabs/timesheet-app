@@ -16,7 +16,7 @@ export interface DayEntry {
   isHoliday?: boolean;
   holidayName?: string;
   holidayType?: Holiday['type'];
-  workType?: 'WFH' | 'WFO' | '';
+  workType?: 'WFH' | 'WFO' | 'Ijin' | 'Sakit' | 'Cuti' | '';
   overtimeOnHoliday?: boolean;
 }
 
@@ -37,22 +37,11 @@ export interface TimesheetMeta {
   };
   supervisorName?: string;
   supervisor2Name?: string;
-  totalWorkDays?: number;
-  totalAbsent?: number;
-  totalSick?: number;
-  totalLeave?: number;
   standardWorkHours?: string;
 }
 
 export interface TimesheetState {
   meta: TimesheetMeta;
   entries: DayEntry[];
-  templateParsed: boolean;
-  templateBuffer?: ArrayBuffer;
-}
-
-export interface ParsedTemplate {
-  companyName?: string;
-  logoBase64?: string;
-  headerFields: Record<string, string>;
+  archive?: Record<string, DayEntry>; // every entry ever filled, keyed by date, so switching months keeps old data
 }

@@ -7,11 +7,12 @@ If it's already professional, just keep it. Return only the refactored text with
 Text: "${text}"`;
 
   try {
-    // Update to Gemini 2.0 Flash (Latest version)
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    // gemini-2.0-flash is shut down; key goes in a header so it never lands in URLs/logs
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         contents: [{

@@ -1,10 +1,10 @@
 import { writable, derived } from 'svelte/store';
 import type { TimesheetState, DayEntry, TimesheetMeta, Holiday } from './types';
-import { generateDaysForMonth } from './calendar';
 import {
   DEFAULT_STANDARD_WORK_HOURS,
   addHourStrings,
   formatWholePercent,
+  getAbsenceCounts,
   getAttendanceDays,
   getStandardWorkDays,
   getStandardWorkHours,
@@ -25,9 +25,20 @@ function loadFromStorage<T>(key: string, fallback: T): T {
   }
 }
 
+let warnedSaveFailed = false;
+
 function saveToStorage(key: string, value: unknown) {
   if (typeof localStorage === 'undefined') return;
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    warnedSaveFailed = false;
+  } catch (err) {
+    console.error('Failed to save to localStorage', err);
+    if (!warnedSaveFailed) {
+      warnedSaveFailed = true;
+      alert('Penyimpanan browser penuh, perubahan TIDAK tersimpan. Export backup, lalu hapus/ganti logo atau tanda tangan yang besar.');
+    }
+  }
 }
 
 function clearStorage() {
@@ -45,39 +56,33 @@ const defaultMeta: TimesheetMeta = {
   holidays: [],
   supervisorName: '',
   supervisor2Name: '',
-  totalAbsent: 0,
-  totalSick: 0,
-  totalLeave: 0,
   standardWorkHours: DEFAULT_STANDARD_WORK_HOURS,
 };
 
 const defaultState: TimesheetState = {
   meta: defaultMeta,
   entries: [],
-  templateParsed: false,
 };
+
+// Mirror the visible entries into the archive so data survives switching months.
+function withArchive(s: TimesheetState): TimesheetState {
+  return { ...s, archive: { ...s.archive, ...Object.fromEntries(s.entries.map(e => [e.date, e])) } };
+}
 
 function createTimesheetStore() {
   const initial = loadFromStorage<TimesheetState>(LS_KEY_TIMESHEET, defaultState);
-  const { subscribe, set, update } = writable<TimesheetState>(initial);
+  const store = writable<TimesheetState>(withArchive(initial));
+  const { subscribe } = store;
+  const set = (s: TimesheetState) => store.set(withArchive(s));
+  const update = (fn: (s: TimesheetState) => TimesheetState) => store.update(s => withArchive(fn(s)));
 
-  subscribe(state => {
-    const { templateBuffer: _, ...toSave } = state as TimesheetState & { templateBuffer?: unknown };
-    saveToStorage(LS_KEY_TIMESHEET, toSave);
-  });
+  subscribe(state => saveToStorage(LS_KEY_TIMESHEET, state));
 
   return {
     subscribe, set, update,
 
     setMeta(meta: Partial<TimesheetMeta>) {
       update(s => ({ ...s, meta: { ...s.meta, ...meta } }));
-    },
-
-    setMonthYear(month: number, year: number, startDate: number = 1) {
-      update(s => {
-        const newEntries = generateDaysForMonth(month, year, s.meta.holidays, s.entries, startDate);
-        return { ...s, meta: { ...s.meta, month, year, startDate }, entries: newEntries };
-      });
     },
 
     setHolidays(holidays: Holiday[]) {
@@ -112,13 +117,9 @@ function createTimesheetStore() {
       }));
     },
 
-    setTemplate(buffer: ArrayBuffer) {
-      update(s => ({ ...s, templateBuffer: buffer, templateParsed: true }));
-    },
-
     reset() {
       clearStorage();
-      set(defaultState);
+      store.set(defaultState);
     },
   };
 }
@@ -215,6 +216,8 @@ export const totalOTHours = derived(timesheetStore, $s => {
 });
 
 export const standardWorkDaysCount = derived(timesheetStore, $s => getStandardWorkDays($s));
+
+export const absenceCounts = derived(timesheetStore, $s => getAbsenceCounts($s));
 
 export const workDaysCount = derived(timesheetStore, $s => getAttendanceDays($s));
 
