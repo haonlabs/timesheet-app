@@ -103,6 +103,32 @@
     exportToPDF(storeState);
   }
 
+  function exportBackup() {
+    const { templateBuffer: _, ...data } = storeState;
+    const blob = new Blob([JSON.stringify({ app: 'timesheet', version: 1, theme: activeTheme, data })], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Timesheet_Backup_${storeState.meta.employeeName || 'Data'}_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+    showToast('Backup exported!');
+  }
+
+  async function importBackup(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const json = JSON.parse(await file.text());
+      const data = json?.data as TimesheetState | undefined;
+      if (json?.app !== 'timesheet' || !data?.meta || !Array.isArray(data.entries)) throw new Error('invalid backup');
+      if (!confirm('Replace current data with this backup?')) return;
+      timesheetStore.set(data);
+      if (themes.some(t => t.id === json.theme)) themeStore.set(json.theme);
+      showToast('Backup imported!');
+    } catch(err) { showToast('Invalid backup file', 'err'); console.error(err); }
+  }
+
   function clearData() {
     if (!confirm('Clear all saved data? This cannot be undone.')) return;
     timesheetStore.reset();
@@ -187,6 +213,16 @@
         <button onclick={handleExportPDF}
           class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
           style="background:var(--c-danger);color:white;">🖨 PDF</button>
+        <button onclick={exportBackup}
+          class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
+          style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-muted);"
+          title="Download all data as a backup file">⬇ Export</button>
+        <label
+          class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90 cursor-pointer"
+          style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-muted);"
+          title="Restore data from a backup file">⬆ Import
+          <input type="file" accept=".json,application/json" class="hidden" onchange={importBackup} />
+        </label>
         <button onclick={clearData}
           class="px-3 py-1.5 rounded-md text-xs font-semibold hover:opacity-90"
           style="background:var(--c-surface2);border:1px solid var(--c-border);color:var(--c-muted);"
